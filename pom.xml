@@ -1,0 +1,34 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.socialbakers</groupId>
+  <artifactId>hbase98-repacked</artifactId>
+  <version>0.1-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <properties>
+    <repacked.version>0.98.8-2.6.0</repacked.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+
+      <dependency>
+        <groupId>com.socialbakers</groupId>
+        <artifactId>dependency-fix</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>hadoop-hbase-repacked</groupId>
+        <artifactId>hadoop-hbase-repacked</artifactId>
+        <version>${repacked.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <modules>
+    <module>dependency-lib</module>
+    <module>dependency-fix</module>
+    <module>copy-table</module>
+  </modules>
+</project>

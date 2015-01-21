@@ -1,0 +1,7 @@
+zap org.apache.hadoop.conf.Configuration
+zap org.apache.hadoop.fs.FileSystem
+zap org.apache.hadoop.hbase.HBaseConfiguration
+zap org.apache.hadoop.hbase.ipc.RpcClient
+zap org.apache.hadoop.security.Groups
+rule com.google.protobuf.** com.google.protobuf98.@1
+rule org.apache.hadoop.** org.apache98.hadoop.@1
