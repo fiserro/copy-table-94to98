@@ -307,6 +307,7 @@ public class CopyTable2 extends Configured implements Tool {
 
 	private static class Mapper94_98 extends TableMapper<Writable, Writable> {
 
+		// private static final byte[] _D = Bytes.toBytes("d");
 		private HTableInterface table;
 
 		@Override
@@ -316,6 +317,12 @@ public class CopyTable2 extends Configured implements Tool {
 			for (KeyValue kv : value.list()) {
 				put.add(kv.getFamily(), kv.getQualifier(), kv.getTimestamp(), kv.getValue());
 			}
+			// NavigableMap<byte[], byte[]> familyMap = value.getFamilyMap(_D);
+			// Set<Entry<byte[], byte[]>> entrySet = familyMap.entrySet();
+			// for (Entry<byte[], byte[]> entry : entrySet) {
+			// put.add(_D, entry.getKey(), entry.getValue());
+			// }
+
 			table.put(put);
 			context.getCounter("hbase98", "put").increment(1);
 		}

@@ -70,6 +70,7 @@ import javax.xml.transform.stream.StreamResult;
 import org.apache.commons.collections.map.UnmodifiableMap;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache98.hadoop.PackageNameFix;
 import org.apache98.hadoop.classification.InterfaceAudience;
 import org.apache98.hadoop.classification.InterfaceStability;
 import org.apache98.hadoop.fs.CommonConfigurationKeys;
@@ -769,6 +770,7 @@ public class Configuration implements Iterable<Map.Entry<String, String>>,
 		if (valueString == null) {
 			return defaultValue;
 		}
+		valueString = PackageNameFix.add98(valueString);
 		try {
 			return getClassByName(valueString);
 		} catch (ClassNotFoundException e) {
