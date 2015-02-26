@@ -1,6 +1,8 @@
 package org.apache.hadoop.hbase.mapreduce;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
@@ -86,25 +88,25 @@ public class CopyTable2 extends Configured implements Tool {
 			scan.setStopRow(Bytes.toBytes(stopRow));
 		}
 
-		// if (families != null) {
-		// String[] fams = families.split(",");
-		// Map<String, String> cfRenameMap = new HashMap<String, String>();
-		// for (String fam : fams) {
-		// String sourceCf;
-		// if (fam.contains(":")) {
-		// // fam looks like "sourceCfName:destCfName"
-		// String[] srcAndDest = fam.split(":", 2);
-		// sourceCf = srcAndDest[0];
-		// String destCf = srcAndDest[1];
-		// cfRenameMap.put(sourceCf, destCf);
-		// } else {
-		// // fam is just "sourceCf"
-		// sourceCf = fam;
-		// }
-		// scan.addFamily(Bytes.toBytes(sourceCf));
-		// }
-		// Import.configureCfRenaming(job.getConfiguration(), cfRenameMap);
-		// }
+		if (families != null) {
+			String[] fams = families.split(",");
+			Map<String, String> cfRenameMap = new HashMap<String, String>();
+			for (String fam : fams) {
+				String sourceCf;
+				if (fam.contains(":")) {
+					// fam looks like "sourceCfName:destCfName"
+					String[] srcAndDest = fam.split(":", 2);
+					sourceCf = srcAndDest[0];
+					String destCf = srcAndDest[1];
+					cfRenameMap.put(sourceCf, destCf);
+				} else {
+					// fam is just "sourceCf"
+					sourceCf = fam;
+				}
+				scan.addFamily(Bytes.toBytes(sourceCf));
+			}
+			Import.configureCfRenaming(job.getConfiguration(), cfRenameMap);
+		}
 		scan.setCaching(400);
 		job.setSpeculativeExecution(false);
 		job.setOutputFormatClass(MultiTableOutputFormat.class);
