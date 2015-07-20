@@ -19,6 +19,7 @@ import org.apache.hadoop.util.GenericOptionsParser;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache98.hadoop.hbase.HBaseConfiguration;
+import org.apache98.hadoop.hbase.client.Durability;
 import org.apache98.hadoop.hbase.client.HConnectionManager;
 import org.apache98.hadoop.hbase.client.HTableInterface;
 import org.apache98.hadoop.hbase.client.Put;
@@ -107,8 +108,8 @@ public class CopyTable2 extends Configured implements Tool {
 			}
 			Import.configureCfRenaming(job.getConfiguration(), cfRenameMap);
 		}
-		scan.setCaching(400);
-		job.setSpeculativeExecution(false);
+		// scan.setCaching(400);
+		// job.setSpeculativeExecution(false);
 		job.setOutputFormatClass(MultiTableOutputFormat.class);
 		TableMapReduceUtil.initTableMapperJob(tableName, scan, Mapper94_98.class, null, null, job, true,
 				RegionSplitTableInputFormat.class);
@@ -119,9 +120,9 @@ public class CopyTable2 extends Configured implements Tool {
 		jobConf.set(HBASE_ZOOKEEPER_QUORUM2, zkQuorum);
 		jobConf.setInt(RegionSplitTableInputFormat.REGION_SPLIT, regionSplit);
 
-		System.out.println(tableName);
-		System.out.println(newTableName);
-		System.out.println(zkQuorum);
+		// System.out.println(tableName);
+		// System.out.println(newTableName);
+		// System.out.println(zkQuorum);
 
 		// TableMapReduceUtil.initTableReducerJob(
 		// newTableName == null ? tableName : newTableName, null, job,
@@ -319,12 +320,7 @@ public class CopyTable2 extends Configured implements Tool {
 			for (KeyValue kv : value.list()) {
 				put.add(kv.getFamily(), kv.getQualifier(), kv.getTimestamp(), kv.getValue());
 			}
-			// NavigableMap<byte[], byte[]> familyMap = value.getFamilyMap(_D);
-			// Set<Entry<byte[], byte[]>> entrySet = familyMap.entrySet();
-			// for (Entry<byte[], byte[]> entry : entrySet) {
-			// put.add(_D, entry.getKey(), entry.getValue());
-			// }
-
+			put.setDurability(Durability.SKIP_WAL);
 			table.put(put);
 			context.getCounter("hbase98", "put").increment(1);
 		}
