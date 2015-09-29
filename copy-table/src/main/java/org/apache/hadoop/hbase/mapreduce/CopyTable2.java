@@ -1,13 +1,18 @@
 package org.apache.hadoop.hbase.mapreduce;
 
+import static org.apache.hadoop.hbase.util.Bytes.toBytes;
+
 import java.io.IOException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.commons.codec.binary.Hex;
+import org.apache.commons.lang.math.NumberUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
@@ -19,9 +24,14 @@ import org.apache.hadoop.util.GenericOptionsParser;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache98.hadoop.hbase.HBaseConfiguration;
+import org.apache98.hadoop.hbase.client.Durability;
 import org.apache98.hadoop.hbase.client.HConnectionManager;
 import org.apache98.hadoop.hbase.client.HTableInterface;
 import org.apache98.hadoop.hbase.client.Put;
+import org.codehaus.jackson.JsonNode;
+import org.codehaus.jackson.JsonParseException;
+import org.codehaus.jackson.map.JsonMappingException;
+import org.codehaus.jackson.map.ObjectMapper;
 
 /**
  * Tool used to copy a table to another one which can be on a different setup.
@@ -309,22 +319,77 @@ public class CopyTable2 extends Configured implements Tool {
 
 	private static class Mapper94_98 extends TableMapper<Writable, Writable> {
 
-		// private static final byte[] _D = Bytes.toBytes("d");
+		private static final byte[] DATA = toBytes("data");
+		private static final byte[] D = toBytes("d");
+		private static final byte[] ID = toBytes("id");
+		private static final byte[] M = toBytes("m");
 		private HTableInterface table;
+		private KeyBuilderTweetByIdV2 keyBuilder = new KeyBuilderTweetByIdV2();
+		private ObjectMapper mapper = new ObjectMapper();
+		private MessageDigest md5Digest;
 
 		@Override
-		protected void map(ImmutableBytesWritable key, Result value, Context context) throws IOException,
+		protected void map(ImmutableBytesWritable key, Result result, Context context) throws IOException,
 				InterruptedException {
-			Put put = new Put(key.get());
-			for (KeyValue kv : value.list()) {
-				put.add(kv.getFamily(), kv.getQualifier(), kv.getTimestamp(), kv.getValue());
-			}
-			// NavigableMap<byte[], byte[]> familyMap = value.getFamilyMap(_D);
-			// Set<Entry<byte[], byte[]>> entrySet = familyMap.entrySet();
-			// for (Entry<byte[], byte[]> entry : entrySet) {
-			// put.add(_D, entry.getKey(), entry.getValue());
-			// }
 
+			byte[] data = result.getValue(D, DATA);
+			if (data == null) {
+				context.getCounter("hbase98", "miss_data").increment(1);
+				return;
+			}
+
+			String idStr;
+			byte[] id = result.getValue(M, ID);
+			if (id == null) {
+				context.getCounter("hbase98", "miss_id").increment(1);
+				try {
+					idStr = readIdStrFromJson(data);
+				} catch (Exception e) {
+					context.getCounter("hbase98", "" + e.getMessage()).increment(1);
+					return;
+				}
+			} else {
+				byte[] bytes = toBytes(new String(Hex.encodeHex(md5Digest.digest(id))));
+				if (Bytes.equals(bytes, key.get())) {
+					context.getCounter("hbase98", "checked_id").increment(1);
+					idStr = Bytes.toString(id);
+				} else {
+					context.getCounter("hbase98", "bad_id").increment(1);
+					try {
+						idStr = readIdStrFromJson(data);
+					} catch (Exception e) {
+						context.getCounter("hbase98", "" + e.getMessage()).increment(1);
+						return;
+					}
+				}
+			}
+
+			if (!NumberUtils.isDigits(idStr)) {
+				context.getCounter("hbase98", "not_num_id").increment(1);
+				return;
+			}
+			Long idLong;
+			try {
+				idLong = Long.valueOf(idStr);
+			} catch (Exception e) {
+				context.getCounter("hbase98", "bad_num_id").increment(1);
+				return;
+			}
+
+			long timeStamp = keyBuilder.toTimeStamp(idLong);
+			if (timeStamp < 1420070400000L) {
+				// before 2015-01-01
+				context.getCounter("hbase98", "before_2015").increment(1);
+				return;
+			} else if (timeStamp > 1427846400000L && timeStamp < 1434326400000L) {
+				context.getCounter("hbase98", "between_mess").increment(1);
+				// between 2015-04-01 and 2015-06-15
+				return;
+			}
+
+			Put put = new Put(keyBuilder.toBytes(idStr));
+			put.add(D, DATA, data);
+			put.setDurability(Durability.SKIP_WAL);
 			table.put(put);
 			context.getCounter("hbase98", "put").increment(1);
 		}
@@ -334,10 +399,22 @@ public class CopyTable2 extends Configured implements Tool {
 			super.setup(context);
 			Configuration conf = context.getConfiguration();
 			org.apache98.hadoop.conf.Configuration conf98 = HBaseConfiguration.create();
-			conf98.set("hbase.client.write.buffer", "20971520");
+			// conf98.set("hbase.client.write.buffer", "20971520");
 			conf98.set(HBASE_ZOOKEEPER_QUORUM, conf.get(HBASE_ZOOKEEPER_QUORUM2));
 			table = HConnectionManager.createConnection(conf98).getTable(conf.get(NEW_TABLE_NAME));
-			table.setAutoFlushTo(false);
+			try {
+				md5Digest = MessageDigest.getInstance("MD5");
+			} catch (NoSuchAlgorithmException e) {
+				throw new IOException(e);
+			}
+			// table.setAutoFlushTo(false);
+		}
+
+		private String readIdStrFromJson(byte[] data) throws IOException, JsonParseException, JsonMappingException {
+			String idStr;
+			JsonNode jsonData = mapper.readValue(data, JsonNode.class);
+			idStr = jsonData.get("id_str").getTextValue();
+			return idStr;
 		}
 
 	}
