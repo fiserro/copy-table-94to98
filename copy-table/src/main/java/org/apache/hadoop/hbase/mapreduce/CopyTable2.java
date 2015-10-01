@@ -1,8 +1,12 @@
 package org.apache.hadoop.hbase.mapreduce;
 
+import static org.apache.hadoop.hbase.util.Bytes.toBytes;
+
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.zip.CRC32;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
@@ -32,6 +36,7 @@ import org.apache98.hadoop.hbase.client.Put;
 public class CopyTable2 extends Configured implements Tool {
 
 	private static final String NEW_TABLE_NAME = "new.table.name";
+	private static final String SALT_BYTES = "salt.bytes";
 	private static final String HBASE_ZOOKEEPER_QUORUM = "hbase.zookeeper.quorum";
 	private static final String HBASE_ZOOKEEPER_QUORUM2 = "hbase.zookeeper.quorum2";
 
@@ -48,6 +53,7 @@ public class CopyTable2 extends Configured implements Tool {
 	static String families = null;
 	static boolean allCells = false;
 	static int regionSplit = -1;
+	static int saltBytes = -1;
 
 	/**
 	 * Sets up the actual job.
@@ -119,6 +125,7 @@ public class CopyTable2 extends Configured implements Tool {
 		jobConf.set(NEW_TABLE_NAME, newTableName);
 		jobConf.set(HBASE_ZOOKEEPER_QUORUM2, zkQuorum);
 		jobConf.setInt(RegionSplitTableInputFormat.REGION_SPLIT, regionSplit);
+		jobConf.setInt(SALT_BYTES, saltBytes);
 
 		// System.out.println(tableName);
 		// System.out.println(newTableName);
@@ -222,6 +229,15 @@ public class CopyTable2 extends Configured implements Tool {
 					continue;
 				}
 
+				final String saltBytesArgKey = "--salt.bytes=";
+				if (cmd.startsWith(saltBytesArgKey)) {
+					saltBytes = Integer.parseInt(cmd.substring(saltBytesArgKey.length()));
+					if (saltBytes < 1 || saltBytes > 4) {
+						throw new IllegalArgumentException("salt bytes must be betweet 1 and 4");
+					}
+					continue;
+				}
+
 				if (cmd.startsWith("--all.cells")) {
 					allCells = true;
 					continue;
@@ -313,10 +329,14 @@ public class CopyTable2 extends Configured implements Tool {
 		// private static final byte[] _D = Bytes.toBytes("d");
 		private HTableInterface table;
 
+		private int saltBytes;
+		int offset;
+		private CRC32 crc = new CRC32();
+
 		@Override
 		protected void map(ImmutableBytesWritable key, Result value, Context context) throws IOException,
 				InterruptedException {
-			Put put = new Put(key.get());
+			Put put = new Put(getRow(key));
 			for (KeyValue kv : value.list()) {
 				put.add(kv.getFamily(), kv.getQualifier(), kv.getTimestamp(), kv.getValue());
 			}
@@ -329,11 +349,27 @@ public class CopyTable2 extends Configured implements Tool {
 		protected void setup(Context context) throws IOException, InterruptedException {
 			super.setup(context);
 			Configuration conf = context.getConfiguration();
+			this.saltBytes = conf.getInt(SALT_BYTES, -1);
+			this.offset = Bytes.SIZEOF_LONG - this.saltBytes;
 			org.apache98.hadoop.conf.Configuration conf98 = HBaseConfiguration.create();
 			conf98.set("hbase.client.write.buffer", "20971520");
 			conf98.set(HBASE_ZOOKEEPER_QUORUM, conf.get(HBASE_ZOOKEEPER_QUORUM2));
 			table = HConnectionManager.createConnection(conf98).getTable(conf.get(NEW_TABLE_NAME));
 			table.setAutoFlushTo(false);
+		}
+
+		private byte[] getRow(ImmutableBytesWritable key) {
+			byte[] row = key.get();
+			if (saltBytes > 0) {
+				ByteBuffer rb = ByteBuffer.allocate(row.length + saltBytes);
+				crc.update(row);
+				long value = crc.getValue();
+				byte[] bytes = toBytes(value);
+				rb.put(bytes, offset, saltBytes);
+				rb.put(row);
+				row = rb.array();
+			}
+			return row;
 		}
 
 	}
