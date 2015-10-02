@@ -1,12 +1,30 @@
 package org.apache.hadoop.hbase.mapreduce;
 
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
+import static org.apache.hadoop.hbase.mapreduce.Statics.HBASE_ZOOKEEPER_QUORUM;
+import static org.apache.hadoop.hbase.mapreduce.Statics.HBASE_ZOOKEEPER_QUORUM2;
+import static org.apache.hadoop.hbase.mapreduce.Statics.NAME;
+import static org.apache.hadoop.hbase.mapreduce.Statics.NEW_TABLE_NAME;
+import static org.apache.hadoop.hbase.mapreduce.Statics.SALT_BYTES;
+import static org.apache.hadoop.hbase.mapreduce.Statics.allCells;
+import static org.apache.hadoop.hbase.mapreduce.Statics.doCommandLine;
+import static org.apache.hadoop.hbase.mapreduce.Statics.endTime;
+import static org.apache.hadoop.hbase.mapreduce.Statics.families;
+import static org.apache.hadoop.hbase.mapreduce.Statics.newTableName;
+import static org.apache.hadoop.hbase.mapreduce.Statics.regionSplit;
+import static org.apache.hadoop.hbase.mapreduce.Statics.saltBytes;
+import static org.apache.hadoop.hbase.mapreduce.Statics.startRow;
+import static org.apache.hadoop.hbase.mapreduce.Statics.startTime;
+import static org.apache.hadoop.hbase.mapreduce.Statics.stopRow;
+import static org.apache.hadoop.hbase.mapreduce.Statics.tableName;
+import static org.apache.hadoop.hbase.mapreduce.Statics.versions;
+import static org.apache.hadoop.hbase.mapreduce.Statics.zkQuorum;
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.zip.CRC32;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
@@ -16,17 +34,22 @@ import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.util.GenericOptionsParser;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
+import org.apache.phoenix.schema.PDataType;
 import org.apache98.hadoop.hbase.HBaseConfiguration;
 import org.apache98.hadoop.hbase.client.Durability;
 import org.apache98.hadoop.hbase.client.HConnectionManager;
 import org.apache98.hadoop.hbase.client.HTableInterface;
 import org.apache98.hadoop.hbase.client.Put;
+import org.apache98.hadoop.hbase.mapreduce.HFileOutputFormat2;
+
+import com.socialbakers.proto.SocialContents.SocialContent.Attachments;
+import com.socialbakers.proto.SocialContents.SocialContent.Attachments.Attachment;
+import com.socialbakers.proto.SocialContents.SocialContent.Attachments.Attachment.Builder;
 
 /**
  * Tool used to copy a table to another one which can be on a different setup.
@@ -34,26 +57,6 @@ import org.apache98.hadoop.hbase.client.Put;
  * of the region server implementation if different from the local cluster.
  */
 public class CopyTable2 extends Configured implements Tool {
-
-	private static final String NEW_TABLE_NAME = "new.table.name";
-	private static final String SALT_BYTES = "salt.bytes";
-	private static final String HBASE_ZOOKEEPER_QUORUM = "hbase.zookeeper.quorum";
-	private static final String HBASE_ZOOKEEPER_QUORUM2 = "hbase.zookeeper.quorum2";
-
-	final static String NAME = "copytable";
-	static long startTime = 0;
-	static long endTime = 0;
-	static int versions = -1;
-	static String tableName = null;
-	static String startRow = null;
-	static String stopRow = null;
-	static String newTableName = null;
-	static String peerAddress = null;
-	static String zkQuorum = null;
-	static String families = null;
-	static boolean allCells = false;
-	static int regionSplit = -1;
-	static int saltBytes = -1;
 
 	/**
 	 * Sets up the actual job.
@@ -114,11 +117,14 @@ public class CopyTable2 extends Configured implements Tool {
 			}
 			Import.configureCfRenaming(job.getConfiguration(), cfRenameMap);
 		}
-		// scan.setCaching(400);
-		// job.setSpeculativeExecution(false);
-		job.setOutputFormatClass(MultiTableOutputFormat.class);
+		scan.setCaching(400);
+		job.setSpeculativeExecution(false);
+		job.setOutputFormatClass(HFileOutputFormat2.class);
 		TableMapReduceUtil.initTableMapperJob(tableName, scan, Mapper94_98.class, null, null, job, true,
 				RegionSplitTableInputFormat.class);
+
+		job.setReducerClass(KeyValueSortReducer.class);
+		job.setNumReduceTasks(9);
 
 		JobConf jobConf = (JobConf) job.getConfiguration();
 
@@ -134,7 +140,6 @@ public class CopyTable2 extends Configured implements Tool {
 		// TableMapReduceUtil.initTableReducerJob(
 		// newTableName == null ? tableName : newTableName, null, job,
 		// null, peerAddress, null, null);
-		job.setNumReduceTasks(0);
 
 		return job;
 	}
@@ -154,162 +159,6 @@ public class CopyTable2 extends Configured implements Tool {
 		System.exit(ret);
 	}
 
-	private static boolean doCommandLine(final String[] args) {
-		// Process command-line args. TODO: Better cmd-line processing
-		// (but hopefully something not as painful as cli options).
-		if (args.length < 1) {
-			printUsage(null);
-			return false;
-		}
-		try {
-			for (int i = 0; i < args.length; i++) {
-				String cmd = args[i];
-				if (cmd.equals("-h") || cmd.startsWith("--h")) {
-					printUsage(null);
-					return false;
-				}
-
-				final String startRowArgKey = "--startrow=";
-				if (cmd.startsWith(startRowArgKey)) {
-					startRow = cmd.substring(startRowArgKey.length());
-					continue;
-				}
-
-				final String stopRowArgKey = "--stoprow=";
-				if (cmd.startsWith(stopRowArgKey)) {
-					stopRow = cmd.substring(stopRowArgKey.length());
-					continue;
-				}
-
-				final String startTimeArgKey = "--starttime=";
-				if (cmd.startsWith(startTimeArgKey)) {
-					startTime = Long.parseLong(cmd.substring(startTimeArgKey.length()));
-					continue;
-				}
-
-				final String endTimeArgKey = "--endtime=";
-				if (cmd.startsWith(endTimeArgKey)) {
-					endTime = Long.parseLong(cmd.substring(endTimeArgKey.length()));
-					continue;
-				}
-
-				final String versionsArgKey = "--versions=";
-				if (cmd.startsWith(versionsArgKey)) {
-					versions = Integer.parseInt(cmd.substring(versionsArgKey.length()));
-					continue;
-				}
-
-				final String newNameArgKey = "--new.name=";
-				if (cmd.startsWith(newNameArgKey)) {
-					newTableName = cmd.substring(newNameArgKey.length());
-					continue;
-				}
-
-				final String peerAdrArgKey = "--peer.adr=";
-				if (cmd.startsWith(peerAdrArgKey)) {
-					peerAddress = cmd.substring(peerAdrArgKey.length());
-					continue;
-				}
-
-				final String zkQuorumArgKey = "--zk.quorum=";
-				if (cmd.startsWith(zkQuorumArgKey)) {
-					zkQuorum = cmd.substring(zkQuorumArgKey.length());
-					continue;
-				}
-
-				final String familiesArgKey = "--families=";
-				if (cmd.startsWith(familiesArgKey)) {
-					families = cmd.substring(familiesArgKey.length());
-					continue;
-				}
-
-				final String regionSplitArgKey = "--region.split=";
-				if (cmd.startsWith(regionSplitArgKey)) {
-					regionSplit = Integer.parseInt(cmd.substring(regionSplitArgKey.length()));
-					continue;
-				}
-
-				final String saltBytesArgKey = "--salt.bytes=";
-				if (cmd.startsWith(saltBytesArgKey)) {
-					saltBytes = Integer.parseInt(cmd.substring(saltBytesArgKey.length()));
-					if (saltBytes < 1 || saltBytes > 4) {
-						throw new IllegalArgumentException("salt bytes must be betweet 1 and 4");
-					}
-					continue;
-				}
-
-				if (cmd.startsWith("--all.cells")) {
-					allCells = true;
-					continue;
-				}
-
-				if (i == args.length - 1) {
-					tableName = cmd;
-					// } else {
-					// printUsage("Invalid argument '" + cmd + "'");
-					// return false;
-				}
-			}
-			if (newTableName == null && peerAddress == null) {
-				printUsage("At least a new table name or a " +
-						"peer address must be specified");
-				return false;
-			}
-			if (startTime > endTime) {
-				printUsage("Invalid time range filter: starttime=" + startTime + " >  endtime=" + endTime);
-				return false;
-			}
-		} catch (Exception e) {
-			e.printStackTrace();
-			printUsage("Can't start because " + e.getMessage());
-			return false;
-		}
-		return true;
-	}
-
-	/*
-	 * @param errorMsg Error message. Can be null.
-	 */
-	private static void printUsage(final String errorMsg) {
-		if (errorMsg != null && errorMsg.length() > 0) {
-			System.err.println("ERROR: " + errorMsg);
-		}
-		System.err.println("Usage: CopyTable2 [general options] [--starttime=X] [--endtime=Y] " +
-				"[--new.name=NEW] [--peer.adr=ADR] <tablename>");
-		System.err.println();
-		System.err.println("Options:");
-		System.err.println(" zk.quorum    hbase.zookeeper.quorum of 0.98 cluster");
-		System.err.println(" region.split number of split per region. 1 means split once to 2 ranges");
-		System.err.println(" rs.class     hbase.regionserver.class of the peer cluster");
-		System.err.println("              specify if different from current cluster");
-		System.err.println(" rs.impl      hbase.regionserver.impl of the peer cluster");
-		System.err.println(" startrow     the start row");
-		System.err.println(" stoprow      the stop row");
-		System.err.println(" starttime    beginning of the time range (unixtime in millis)");
-		System.err.println("              without endtime means from starttime to forever");
-		System.err.println(" endtime      end of the time range.  Ignored if no starttime specified.");
-		System.err.println(" versions     number of cell versions to copy");
-		System.err.println(" new.name     new table's name");
-		System.err.println(" peer.adr     Address of the peer cluster given in the format");
-		System.err.println("              hbase.zookeeer.quorum:hbase.zookeeper.client.port:zookeeper.znode.parent");
-		System.err.println(" families     comma-separated list of families to copy");
-		System.err.println("              To copy from cf1 to cf2, give sourceCfName:destCfName. ");
-		System.err.println("              To keep the same name, just give \"cfName\"");
-		System.err.println(" all.cells    also copy delete markers and deleted cells");
-		System.err.println();
-		System.err.println("Args:");
-		System.err.println(" tablename    Name of the table to copy");
-		System.err.println();
-		System.err.println("Examples:");
-		System.err.println(" To copy 'TestTable' to a cluster that uses replication for a 1 hour window:");
-		System.err.println(" $ bin/hbase " +
-				"org.apache.hadoop.hbase.mapreduce.CopyTable --starttime=1265875194289 --endtime=1265878794289 " +
-				"--peer.adr=server1,server2,server3:2181:/hbase --families=myOldCf:myNewCf,cf2,cf3 TestTable ");
-		System.err.println("For performance consider the following general options:\n"
-				+ "-Dhbase.client.scanner.caching=100\n"
-				+ "-Dmapred.map.tasks.speculative.execution=false");
-	}
-
 	public CopyTable2(Configuration conf) {
 		super(conf);
 	}
@@ -324,23 +173,105 @@ public class CopyTable2 extends Configured implements Tool {
 		return job.waitForCompletion(true) ? 0 : 1;
 	}
 
-	private static class Mapper94_98 extends TableMapper<Writable, Writable> {
+	private static class Mapper94_98 extends TableMapper<ImmutableBytesWritable, KeyValue> {
+
+		private static final byte[] M = toBytes("m");
+		private static final byte[] D = toBytes("d");
+		private static final byte[] ID = toBytes("id");
+		private static final byte[] ATTACH_TYPE = toBytes("attach_type");
+		private static final byte[] ATTACH_SRC = toBytes("attach_src");
+		private static final byte[] ATTACH_URL = toBytes("attach_url");
+		private static final byte[] ATTACH_TARGET = toBytes("attach_target");
+		private static final byte[] ATTACH_H = toBytes("attach_h");
+		private static final byte[] ATTACH_W = toBytes("attach_w");
+		private static final byte[] ATTACHMENTS = toBytes("attachments");
+		private static final byte[] CREATED_TIME = toBytes("created_time");
+		private static final byte[] ID_ORIG = toBytes("id_orig");
+		private static final byte[] ORIGINAL_ID = toBytes("original_id");
+		private static final byte[] OBJECT_ID = toBytes("object_id");
+		private static final byte[] MESSAGE = toBytes("message");
+		private static final byte[] AUTHOR_ID = toBytes("author_id");
+		private static final byte[] USER_ID = toBytes("user_id");
+		private static final byte[] POST_ID = toBytes("post_id");
+		private static final byte[] PARENT_ID = toBytes("parent_id");
+		private static final byte[] LIKE_COUNT = toBytes("like_count");
+		private static final byte[] LIKES = toBytes("likes");
+		private static final byte[] FACEBOOK_PARENT_COMMENT_ID = toBytes("facebook.parent_comment_id");
 
 		// private static final byte[] _D = Bytes.toBytes("d");
 		private HTableInterface table;
 
-		private int saltBytes;
-		int offset;
-		private CRC32 crc = new CRC32();
-
 		@Override
-		protected void map(ImmutableBytesWritable key, Result value, Context context) throws IOException,
+		protected void map(ImmutableBytesWritable key, Result result, Context context) throws IOException,
 				InterruptedException {
-			Put put = new Put(getRow(key));
-			for (KeyValue kv : value.list()) {
-				put.add(kv.getFamily(), kv.getQualifier(), kv.getTimestamp(), kv.getValue());
+
+			byte[] id = getBytes(ID, result);
+			if (id == null) {
+				context.getCounter("hbase98", "miss_id").increment(1);
+				return;
 			}
+
+			Put put = new Put(id);
 			put.setDurability(Durability.SKIP_WAL);
+
+			put(result, ID_ORIG, put, ORIGINAL_ID);
+			put(result, OBJECT_ID, put, OBJECT_ID);
+			put(result, MESSAGE, put, MESSAGE);
+			byte[] createdTime = getPhoenixDateBytes(CREATED_TIME, result);
+			if (createdTime == null) {
+				context.getCounter("hbase98", "miss_created_time").increment(1);
+				return;
+			}
+			put(put, CREATED_TIME, createdTime);
+			put(result, USER_ID, put, AUTHOR_ID);
+			put(result, POST_ID, put, PARENT_ID);
+			put(put, LIKE_COUNT, getPhoenixIntegerBytes(LIKES, result));
+			put(result, PARENT_ID, put, FACEBOOK_PARENT_COMMENT_ID);
+
+			String attach_type = getString(ATTACH_TYPE, result);
+			String attach_src = getString(ATTACH_SRC, result);
+			String attach_url = getString(ATTACH_URL, result);
+			String attach_target = getString(ATTACH_TARGET, result);
+			Integer attach_h = getInteger(ATTACH_H, result);
+			Integer attach_w = getInteger(ATTACH_W, result);
+			Attachments.Builder attachmentsBuilder = Attachments.newBuilder();
+			if (isNotBlank(attach_type) || isNotBlank(attach_src) || isNotBlank(attach_url) || isNotBlank(attach_target)
+					|| attach_h != null || attach_w != null) {
+				Builder attachmentBuilder = Attachment.newBuilder();
+				if (isNotBlank(attach_type)) {
+					attachmentBuilder.setObjectType(attach_type);
+				}
+				if (isNotBlank(attach_src)) {
+					attachmentBuilder.setDisplayName(attach_src);
+				}
+				if (isNotBlank(attach_url)) {
+					attachmentBuilder.setId(attach_url);
+				}
+				if (isNotBlank(attach_target)) {
+					attachmentBuilder.setContent(attach_target);
+				}
+
+				Attachment.Image.Builder imageBuilder = Attachment.Image.newBuilder();
+				if (isNotBlank(attach_url)) {
+					imageBuilder.setUrl(attach_url);
+				}
+				if (isNotBlank(attach_type)) {
+					imageBuilder.setType(attach_type);
+				}
+				if (attach_h != null) {
+					imageBuilder.setHeight(attach_h);
+				}
+				if (attach_w != null) {
+					imageBuilder.setWidth(attach_w);
+				}
+				if (imageBuilder.hasUrl() || imageBuilder.hasType() || imageBuilder.hasHeight() || imageBuilder.hasWidth()) {
+					attachmentBuilder.setImage(imageBuilder);
+				}
+
+				attachmentsBuilder.addAttachment(attachmentBuilder);
+				put(put, ATTACHMENTS, attachmentsBuilder.build().toByteArray());
+			}
+
 			table.put(put);
 			context.getCounter("hbase98", "put").increment(1);
 		}
@@ -349,8 +280,6 @@ public class CopyTable2 extends Configured implements Tool {
 		protected void setup(Context context) throws IOException, InterruptedException {
 			super.setup(context);
 			Configuration conf = context.getConfiguration();
-			this.saltBytes = conf.getInt(SALT_BYTES, -1);
-			this.offset = Bytes.SIZEOF_LONG - this.saltBytes;
 			org.apache98.hadoop.conf.Configuration conf98 = HBaseConfiguration.create();
 			conf98.set("hbase.client.write.buffer", "20971520");
 			conf98.set(HBASE_ZOOKEEPER_QUORUM, conf.get(HBASE_ZOOKEEPER_QUORUM2));
@@ -358,18 +287,73 @@ public class CopyTable2 extends Configured implements Tool {
 			table.setAutoFlushTo(false);
 		}
 
-		private byte[] getRow(ImmutableBytesWritable key) {
-			byte[] row = key.get();
-			if (saltBytes > 0) {
-				ByteBuffer rb = ByteBuffer.allocate(row.length + saltBytes);
-				crc.update(row);
-				long value = crc.getValue();
-				byte[] bytes = toBytes(value);
-				rb.put(bytes, offset, saltBytes);
-				rb.put(row);
-				row = rb.array();
+		private byte[] getBytes(byte[] qualifier, Result result) {
+			return result.getValue(M, qualifier);
+		}
+
+		private Integer getInteger(byte[] qualifier, Result result) {
+			byte[] value = getBytes(qualifier, result);
+			if (value == null) {
+				return null;
 			}
-			return row;
+			return Integer.valueOf(Bytes.toString(value));
+		}
+
+		private byte[] getPhoenixDateBytes(byte[] qualifier, Result result) {
+			String value = getString(qualifier, result);
+			if (value == null) {
+				return null;
+			}
+			try {
+				return toPhoenixDate(value);
+			} catch (Exception e) {
+				e.printStackTrace();
+				return null;
+			}
+		}
+
+		private byte[] getPhoenixIntegerBytes(byte[] qualifier, Result result) {
+			Integer value = getInteger(qualifier, result);
+			if (value == null) {
+				return null;
+			}
+			try {
+				return toPhoenixInteger(value);
+			} catch (Exception e) {
+				e.printStackTrace();
+				return null;
+			}
+		}
+
+		private String getString(byte[] qualifier, Result result) {
+			byte[] value = getBytes(qualifier, result);
+			if (value == null) {
+				return null;
+			}
+			return Bytes.toString(value);
+		}
+
+		private void put(Put put, byte[] qualifier, byte[] value) {
+			if (value == null) {
+				return;
+			}
+			put.add(D, qualifier, value);
+		}
+
+		private void put(Result result, byte[] qualifierSource, Put put, byte[] qualifierTarget) {
+			put(put, qualifierTarget, getBytes(qualifierSource, result));
+		}
+
+		private byte[] toPhoenixDate(String value) {
+			if (value == null) {
+				return null;
+			}
+			Date date = new Date(Long.valueOf(value) * 1000);
+			return PDataType.DATE.toBytes(date);
+		}
+
+		private byte[] toPhoenixInteger(Integer value) {
+			return PDataType.INTEGER.toBytes(value);
 		}
 
 	}
