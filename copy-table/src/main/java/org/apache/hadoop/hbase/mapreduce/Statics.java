@@ -16,7 +16,7 @@ public class Statics {
 	public static String tableName = "fb_comments";
 	public static String startRow = null;
 	public static String stopRow = null;
-	public static String newTableName = "fb_comments";
+	public static String newTableName = "fb_comments_old";
 	public static String peerAddress = null;
 	public static String zkQuorum = "c-sencha-s01,c-sencha-s02,c-sencha-s03";
 	public static String families = null;

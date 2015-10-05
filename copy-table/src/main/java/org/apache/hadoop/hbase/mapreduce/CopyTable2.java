@@ -20,32 +20,42 @@ import static org.apache.hadoop.hbase.mapreduce.Statics.tableName;
 import static org.apache.hadoop.hbase.mapreduce.Statics.versions;
 import static org.apache.hadoop.hbase.mapreduce.Statics.zkQuorum;
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
+import static org.apache.hadoop.hbase.util.Bytes.toBytesBinary;
 
 import java.io.IOException;
+import java.security.PrivilegedExceptionAction;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.ZooKeeperConnectionException;
+import org.apache.hadoop.hbase.client.Get;
+import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.lib.output.NullOutputFormat;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.util.GenericOptionsParser;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.phoenix.schema.PDataType;
 import org.apache98.hadoop.hbase.HBaseConfiguration;
 import org.apache98.hadoop.hbase.client.Durability;
+import org.apache98.hadoop.hbase.client.HConnection;
 import org.apache98.hadoop.hbase.client.HConnectionManager;
 import org.apache98.hadoop.hbase.client.HTableInterface;
+import org.apache98.hadoop.hbase.client.HTableUtil;
 import org.apache98.hadoop.hbase.client.Put;
-import org.apache98.hadoop.hbase.mapreduce.HFileOutputFormat2;
 
 import com.socialbakers.proto.SocialContents.SocialContent.Attachments;
 import com.socialbakers.proto.SocialContents.SocialContent.Attachments.Attachment;
@@ -119,12 +129,11 @@ public class CopyTable2 extends Configured implements Tool {
 		}
 		scan.setCaching(400);
 		job.setSpeculativeExecution(false);
-		job.setOutputFormatClass(HFileOutputFormat2.class);
 		TableMapReduceUtil.initTableMapperJob(tableName, scan, Mapper94_98.class, null, null, job, true,
 				RegionSplitTableInputFormat.class);
 
-		job.setReducerClass(KeyValueSortReducer.class);
-		job.setNumReduceTasks(9);
+		job.setOutputFormatClass(NullOutputFormat.class);
+		job.setNumReduceTasks(0);
 
 		JobConf jobConf = (JobConf) job.getConfiguration();
 
@@ -198,30 +207,43 @@ public class CopyTable2 extends Configured implements Tool {
 		private static final byte[] LIKES = toBytes("likes");
 		private static final byte[] FACEBOOK_PARENT_COMMENT_ID = toBytes("facebook.parent_comment_id");
 
-		// private static final byte[] _D = Bytes.toBytes("d");
-		private HTableInterface table;
+		public static void main(String[] args) throws ZooKeeperConnectionException, IOException, InterruptedException {
 
-		@Override
-		protected void map(ImmutableBytesWritable key, Result result, Context context) throws IOException,
-				InterruptedException {
+			UserGroupInformation ugi = UserGroupInformation.createRemoteUser("hbase");
+			PrivilegedExceptionAction<Put> action = new PrivilegedExceptionAction<Put>() {
+				@Override
+				public Put run() throws Exception {
+					Configuration conf = org.apache.hadoop.hbase.HBaseConfiguration.create();
+					conf.set("hbase.zookeeper.quorum", "zookeeper1");
+					HTable table = new HTable(conf, "fb_comments");
+					Get get = new Get(
+							toBytesBinary("00_\\x00\\x00\\x00\\x01?\\x1C\\xA3<_\\x7F\\xDB\\xBC\\xA0\\x81{\\xE8m_\\x7F\\xDB\\xBC\\xA0o\\xEF\\x9B\\xAD"));
+					Result result = table.get(get);
+					byte[] id = getBytes(ID, result);
+					byte[] createdTime = getPhoenixDateBytes(CREATED_TIME, result);
+					Put put = createPut(result, id, createdTime);
+					table.close();
 
-			byte[] id = getBytes(ID, result);
-			if (id == null) {
-				context.getCounter("hbase98", "miss_id").increment(1);
-				return;
-			}
+					return put;
+				}
 
+			};
+			Put put = ugi.doAs(action);
+
+			org.apache98.hadoop.conf.Configuration conf98 = HBaseConfiguration.create();
+			conf98.set("hbase.zookeeper.quorum", "c-sencha-s01");
+			HTableInterface table98 = HConnectionManager.createConnection(conf98).getTable("fb_comments");
+			table98.put(put);
+			table98.close();
+		}
+
+		private static Put createPut(Result result, byte[] id, byte[] createdTime) {
 			Put put = new Put(id);
 			put.setDurability(Durability.SKIP_WAL);
 
 			put(result, ID_ORIG, put, ORIGINAL_ID);
 			put(result, OBJECT_ID, put, OBJECT_ID);
 			put(result, MESSAGE, put, MESSAGE);
-			byte[] createdTime = getPhoenixDateBytes(CREATED_TIME, result);
-			if (createdTime == null) {
-				context.getCounter("hbase98", "miss_created_time").increment(1);
-				return;
-			}
 			put(put, CREATED_TIME, createdTime);
 			put(result, USER_ID, put, AUTHOR_ID);
 			put(result, POST_ID, put, PARENT_ID);
@@ -271,27 +293,14 @@ public class CopyTable2 extends Configured implements Tool {
 				attachmentsBuilder.addAttachment(attachmentBuilder);
 				put(put, ATTACHMENTS, attachmentsBuilder.build().toByteArray());
 			}
-
-			table.put(put);
-			context.getCounter("hbase98", "put").increment(1);
+			return put;
 		}
 
-		@Override
-		protected void setup(Context context) throws IOException, InterruptedException {
-			super.setup(context);
-			Configuration conf = context.getConfiguration();
-			org.apache98.hadoop.conf.Configuration conf98 = HBaseConfiguration.create();
-			conf98.set("hbase.client.write.buffer", "20971520");
-			conf98.set(HBASE_ZOOKEEPER_QUORUM, conf.get(HBASE_ZOOKEEPER_QUORUM2));
-			table = HConnectionManager.createConnection(conf98).getTable(conf.get(NEW_TABLE_NAME));
-			table.setAutoFlushTo(false);
-		}
-
-		private byte[] getBytes(byte[] qualifier, Result result) {
+		private static byte[] getBytes(byte[] qualifier, Result result) {
 			return result.getValue(M, qualifier);
 		}
 
-		private Integer getInteger(byte[] qualifier, Result result) {
+		private static Integer getInteger(byte[] qualifier, Result result) {
 			byte[] value = getBytes(qualifier, result);
 			if (value == null) {
 				return null;
@@ -299,7 +308,7 @@ public class CopyTable2 extends Configured implements Tool {
 			return Integer.valueOf(Bytes.toString(value));
 		}
 
-		private byte[] getPhoenixDateBytes(byte[] qualifier, Result result) {
+		private static byte[] getPhoenixDateBytes(byte[] qualifier, Result result) {
 			String value = getString(qualifier, result);
 			if (value == null) {
 				return null;
@@ -312,7 +321,7 @@ public class CopyTable2 extends Configured implements Tool {
 			}
 		}
 
-		private byte[] getPhoenixIntegerBytes(byte[] qualifier, Result result) {
+		private static byte[] getPhoenixIntegerBytes(byte[] qualifier, Result result) {
 			Integer value = getInteger(qualifier, result);
 			if (value == null) {
 				return null;
@@ -325,7 +334,7 @@ public class CopyTable2 extends Configured implements Tool {
 			}
 		}
 
-		private String getString(byte[] qualifier, Result result) {
+		private static String getString(byte[] qualifier, Result result) {
 			byte[] value = getBytes(qualifier, result);
 			if (value == null) {
 				return null;
@@ -333,18 +342,18 @@ public class CopyTable2 extends Configured implements Tool {
 			return Bytes.toString(value);
 		}
 
-		private void put(Put put, byte[] qualifier, byte[] value) {
+		private static void put(Put put, byte[] qualifier, byte[] value) {
 			if (value == null) {
 				return;
 			}
 			put.add(D, qualifier, value);
 		}
 
-		private void put(Result result, byte[] qualifierSource, Put put, byte[] qualifierTarget) {
+		private static void put(Result result, byte[] qualifierSource, Put put, byte[] qualifierTarget) {
 			put(put, qualifierTarget, getBytes(qualifierSource, result));
 		}
 
-		private byte[] toPhoenixDate(String value) {
+		private static byte[] toPhoenixDate(String value) {
 			if (value == null) {
 				return null;
 			}
@@ -352,8 +361,63 @@ public class CopyTable2 extends Configured implements Tool {
 			return PDataType.DATE.toBytes(date);
 		}
 
-		private byte[] toPhoenixInteger(Integer value) {
+		private static byte[] toPhoenixInteger(Integer value) {
 			return PDataType.INTEGER.toBytes(value);
+		}
+
+		// private static final byte[] _D = Bytes.toBytes("d");
+		private org.apache98.hadoop.hbase.client.HTable table;
+		private List<Put> puts = new ArrayList<Put>();
+		private static int BATCH_SIZE = 2000;
+
+		@Override
+		protected void cleanup(Context context) throws IOException, InterruptedException {
+			super.cleanup(context);
+			flush(context);
+		}
+
+		@Override
+		protected void map(ImmutableBytesWritable key, Result result, Context context) throws IOException,
+				InterruptedException {
+
+			byte[] id = getBytes(ID, result);
+			if (id == null) {
+				context.getCounter("hbase98", "miss_id").increment(1);
+				return;
+			}
+
+			byte[] createdTime = getPhoenixDateBytes(CREATED_TIME, result);
+			if (createdTime == null) {
+				context.getCounter("hbase98", "miss_created_time").increment(1);
+				return;
+			}
+
+			Put put = createPut(result, id, createdTime);
+			puts.add(put);
+			if (puts.size() >= BATCH_SIZE) {
+				flush(context);
+			}
+		}
+
+		@Override
+		protected void setup(Context context) throws IOException, InterruptedException {
+			super.setup(context);
+			Configuration conf = context.getConfiguration();
+			org.apache98.hadoop.conf.Configuration conf98 = HBaseConfiguration.create();
+			// conf98.set("hbase.client.write.buffer", "20971520");
+			conf98.set(HBASE_ZOOKEEPER_QUORUM, conf.get(HBASE_ZOOKEEPER_QUORUM2));
+			HConnection connection = HConnectionManager.createConnection(conf98);
+			table = (org.apache98.hadoop.hbase.client.HTable) connection.getTable(conf.get(NEW_TABLE_NAME));
+			table.setAutoFlushTo(false);
+		}
+
+		private void flush(Context context) throws IOException {
+			int putSize = puts.size();
+			if (putSize > 0) {
+				HTableUtil.bucketRsPut(table, puts);
+				context.getCounter("hbase98", "put").increment(putSize);
+				puts.clear();
+			}
 		}
 
 	}

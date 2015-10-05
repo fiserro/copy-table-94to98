@@ -10,6 +10,8 @@
   <properties>
     <version.hadoop>1.0.3</version.hadoop>
     <version.hbase>0.94.17</version.hbase>
+    <version.protos>0.2.3-protobuf-2.4.1-SNAPSHOT</version.protos>
+    <version.phoenix>3.0.0-incubating</version.phoenix>
   </properties>
 
   <dependencies>
@@ -20,6 +22,36 @@
         <exclusion>
           <groupId>org.slf4j</groupId>
           <artifactId>slf4j-log4j12</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.phoenix</groupId>
+      <artifactId>phoenix-core</artifactId>
+      <version>${version.phoenix}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.socialbakers.protobuf</groupId>
+      <artifactId>sbks-protos</artifactId>
+      <version>${version.protos}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>com.socialbakers.morphlines</groupId>
+          <artifactId>morphlines-protobuf</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.google.protobuf</groupId>
+          <artifactId>protobuf-java</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.googlecode.protobuf-java-format</groupId>
+          <artifactId>protobuf-java-format</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.dyuproject.protostuff</groupId>
+          <artifactId>protostuff-core</artifactId>
         </exclusion>
       </exclusions>
     </dependency>
@@ -51,4 +83,29 @@
       </plugin>
     </plugins>
   </build>
+
+  <repositories>
+    <repository>
+      <id>nexus</id>
+      <url>http://mvn.ccl/nexus/content/groups/public/</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+    </repository>
+  </repositories>
+  <pluginRepositories>
+    <pluginRepository>
+      <id>nexus</id>
+      <url>http://mvn.ccl/nexus/content/groups/public/</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+    </pluginRepository>
+  </pluginRepositories>
 </project>
