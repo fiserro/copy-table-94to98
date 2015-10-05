@@ -1,6 +1,6 @@
 package org.apache.hadoop.hbase.mapreduce;
 
-import static org.apache.commons.lang3.StringUtils.isNotBlank;
+import static org.apache.commons.lang.StringUtils.isNotBlank;
 import static org.apache.hadoop.hbase.mapreduce.Statics.HBASE_ZOOKEEPER_QUORUM;
 import static org.apache.hadoop.hbase.mapreduce.Statics.HBASE_ZOOKEEPER_QUORUM2;
 import static org.apache.hadoop.hbase.mapreduce.Statics.NAME;
