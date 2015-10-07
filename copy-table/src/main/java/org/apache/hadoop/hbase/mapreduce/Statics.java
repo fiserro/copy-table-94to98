@@ -6,6 +6,7 @@ public class Statics {
 
 	public static final String NEW_TABLE_NAME = "new.table.name";
 	public static final String SALT_BYTES = "salt.bytes";
+	public static final String BUCKET_SIZE = "bucket.size";
 	public static final String HBASE_ZOOKEEPER_QUORUM = "hbase.zookeeper.quorum";
 	public static final String HBASE_ZOOKEEPER_QUORUM2 = "hbase.zookeeper.quorum2";
 
@@ -23,6 +24,7 @@ public class Statics {
 	public static boolean allCells = false;
 	public static int regionSplit = -1;
 	public static int saltBytes = -1;
+	public static int bucketSize = 30000;
 
 	public static final Path OUPUT_PATH = new Path("hdfs:///migrations/fb_comments/");
 
@@ -98,6 +100,12 @@ public class Statics {
 				final String regionSplitArgKey = "--region.split=";
 				if (cmd.startsWith(regionSplitArgKey)) {
 					regionSplit = Integer.parseInt(cmd.substring(regionSplitArgKey.length()));
+					continue;
+				}
+
+				final String bucketSizeArgKey = "--bucket.size=";
+				if (cmd.startsWith(bucketSizeArgKey)) {
+					bucketSize = Integer.parseInt(cmd.substring(bucketSizeArgKey.length()));
 					continue;
 				}
 

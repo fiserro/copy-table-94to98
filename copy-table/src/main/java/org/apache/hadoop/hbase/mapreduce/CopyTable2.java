@@ -1,12 +1,14 @@
 package org.apache.hadoop.hbase.mapreduce;
 
 import static org.apache.commons.lang.StringUtils.isNotBlank;
+import static org.apache.hadoop.hbase.mapreduce.Statics.BUCKET_SIZE;
 import static org.apache.hadoop.hbase.mapreduce.Statics.HBASE_ZOOKEEPER_QUORUM;
 import static org.apache.hadoop.hbase.mapreduce.Statics.HBASE_ZOOKEEPER_QUORUM2;
 import static org.apache.hadoop.hbase.mapreduce.Statics.NAME;
 import static org.apache.hadoop.hbase.mapreduce.Statics.NEW_TABLE_NAME;
 import static org.apache.hadoop.hbase.mapreduce.Statics.SALT_BYTES;
 import static org.apache.hadoop.hbase.mapreduce.Statics.allCells;
+import static org.apache.hadoop.hbase.mapreduce.Statics.bucketSize;
 import static org.apache.hadoop.hbase.mapreduce.Statics.doCommandLine;
 import static org.apache.hadoop.hbase.mapreduce.Statics.endTime;
 import static org.apache.hadoop.hbase.mapreduce.Statics.families;
@@ -20,23 +22,23 @@ import static org.apache.hadoop.hbase.mapreduce.Statics.tableName;
 import static org.apache.hadoop.hbase.mapreduce.Statics.versions;
 import static org.apache.hadoop.hbase.mapreduce.Statics.zkQuorum;
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
-import static org.apache.hadoop.hbase.util.Bytes.toBytesBinary;
 
 import java.io.IOException;
-import java.security.PrivilegedExceptionAction;
+import java.nio.ByteBuffer;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.CRC32;
 
+import org.apache.commons.lang.math.NumberUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.KeyValue;
-import org.apache.hadoop.hbase.ZooKeeperConnectionException;
-import org.apache.hadoop.hbase.client.Get;
-import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
@@ -44,7 +46,6 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.lib.output.NullOutputFormat;
-import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.util.GenericOptionsParser;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
@@ -53,7 +54,6 @@ import org.apache98.hadoop.hbase.HBaseConfiguration;
 import org.apache98.hadoop.hbase.client.Durability;
 import org.apache98.hadoop.hbase.client.HConnection;
 import org.apache98.hadoop.hbase.client.HConnectionManager;
-import org.apache98.hadoop.hbase.client.HTableInterface;
 import org.apache98.hadoop.hbase.client.HTableUtil;
 import org.apache98.hadoop.hbase.client.Put;
 
@@ -85,8 +85,6 @@ public class CopyTable2 extends Configured implements Tool {
 			return null;
 		}
 
-		Job job = new Job(conf, NAME + "_" + tableName);
-		job.setJarByClass(CopyTable2.class);
 		Scan scan = new Scan();
 		scan.setCacheBlocks(false);
 		if (startTime != 0) {
@@ -100,14 +98,24 @@ public class CopyTable2 extends Configured implements Tool {
 			scan.setMaxVersions(versions);
 		}
 
+		String jobName = NAME + "_" + tableName;
+
 		if (startRow != null) {
 			scan.setStartRow(Bytes.toBytes(startRow));
+			jobName += ("_" + startRow);
+		} else {
+			jobName += "_firstRow";
 		}
 
 		if (stopRow != null) {
 			scan.setStopRow(Bytes.toBytes(stopRow));
+			jobName += ("-" + stopRow);
+		} else {
+			jobName += "-lastRow";
 		}
 
+		Job job = new Job(conf, jobName);
+		job.setJarByClass(CopyTable2.class);
 		if (families != null) {
 			String[] fams = families.split(",");
 			Map<String, String> cfRenameMap = new HashMap<String, String>();
@@ -128,6 +136,7 @@ public class CopyTable2 extends Configured implements Tool {
 			Import.configureCfRenaming(job.getConfiguration(), cfRenameMap);
 		}
 		scan.setCaching(400);
+
 		job.setSpeculativeExecution(false);
 		TableMapReduceUtil.initTableMapperJob(tableName, scan, Mapper94_98.class, null, null, job, true,
 				RegionSplitTableInputFormat.class);
@@ -141,6 +150,7 @@ public class CopyTable2 extends Configured implements Tool {
 		jobConf.set(HBASE_ZOOKEEPER_QUORUM2, zkQuorum);
 		jobConf.setInt(RegionSplitTableInputFormat.REGION_SPLIT, regionSplit);
 		jobConf.setInt(SALT_BYTES, saltBytes);
+		jobConf.setInt(BUCKET_SIZE, bucketSize);
 
 		// System.out.println(tableName);
 		// System.out.println(newTableName);
@@ -207,38 +217,98 @@ public class CopyTable2 extends Configured implements Tool {
 		private static final byte[] LIKES = toBytes("likes");
 		private static final byte[] FACEBOOK_PARENT_COMMENT_ID = toBytes("facebook.parent_comment_id");
 
-		public static void main(String[] args) throws ZooKeeperConnectionException, IOException, InterruptedException {
+		// public static void main(String[] args) throws ZooKeeperConnectionException, IOException, InterruptedException
+		// {
+		//
+		// UserGroupInformation ugi = UserGroupInformation.createRemoteUser("hbase");
+		// PrivilegedExceptionAction<Put> action = new PrivilegedExceptionAction<Put>() {
+		// @Override
+		// public Put run() throws Exception {
+		// Configuration conf = org.apache.hadoop.hbase.HBaseConfiguration.create();
+		// conf.set("hbase.zookeeper.quorum", "zookeeper1");
+		// HTable table = new HTable(conf, "fb_comments");
+		// Get get = new Get(
+		// toBytesBinary("00_\\x00\\x00\\x00\\x01?\\x1C\\xA3<_\\x7F\\xDB\\xBC\\xA0\\x81{\\xE8m_\\x7F\\xDB\\xBC\\xA0o\\xEF\\x9B\\xAD"));
+		// Result result = table.get(get);
+		// byte[] id = getBytes(ID, result);
+		// byte[] createdTime = getPhoenixDateBytes(CREATED_TIME, result);
+		// Put put = createPut(result, id, createdTime);
+		// table.close();
+		//
+		// return put;
+		// }
+		//
+		// };
+		// Put put = ugi.doAs(action);
+		//
+		// org.apache98.hadoop.conf.Configuration conf98 = HBaseConfiguration.create();
+		// conf98.set("hbase.zookeeper.quorum", "c-sencha-s01");
+		// HTableInterface table98 = HConnectionManager.createConnection(conf98).getTable("fb_comments");
+		// table98.put(put);
+		// table98.close();
+		// }
 
-			UserGroupInformation ugi = UserGroupInformation.createRemoteUser("hbase");
-			PrivilegedExceptionAction<Put> action = new PrivilegedExceptionAction<Put>() {
-				@Override
-				public Put run() throws Exception {
-					Configuration conf = org.apache.hadoop.hbase.HBaseConfiguration.create();
-					conf.set("hbase.zookeeper.quorum", "zookeeper1");
-					HTable table = new HTable(conf, "fb_comments");
-					Get get = new Get(
-							toBytesBinary("00_\\x00\\x00\\x00\\x01?\\x1C\\xA3<_\\x7F\\xDB\\xBC\\xA0\\x81{\\xE8m_\\x7F\\xDB\\xBC\\xA0o\\xEF\\x9B\\xAD"));
-					Result result = table.get(get);
-					byte[] id = getBytes(ID, result);
-					byte[] createdTime = getPhoenixDateBytes(CREATED_TIME, result);
-					Put put = createPut(result, id, createdTime);
-					table.close();
+		// private static final byte[] _D = Bytes.toBytes("d");
+		private org.apache98.hadoop.hbase.client.HTable table;
 
-					return put;
-				}
+		private List<Put> puts = new ArrayList<Put>();
 
-			};
-			Put put = ugi.doAs(action);
+		int bucketSize = 30000;
 
-			org.apache98.hadoop.conf.Configuration conf98 = HBaseConfiguration.create();
-			conf98.set("hbase.zookeeper.quorum", "c-sencha-s01");
-			HTableInterface table98 = HConnectionManager.createConnection(conf98).getTable("fb_comments");
-			table98.put(put);
-			table98.close();
+		private int saltBytes;
+
+		int offset;
+
+		private CRC32 crc = new CRC32();
+
+		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ");
+
+		@Override
+		protected void cleanup(Context context) throws IOException, InterruptedException {
+			super.cleanup(context);
+			flush(context);
 		}
 
-		private static Put createPut(Result result, byte[] id, byte[] createdTime) {
-			Put put = new Put(id);
+		@Override
+		protected void map(ImmutableBytesWritable key, Result result, Context context) throws IOException,
+				InterruptedException {
+
+			byte[] id = getBytes(ID, result);
+			if (id == null) {
+				context.getCounter("hbase98", "miss_id").increment(1);
+				return;
+			}
+
+			byte[] createdTime = getPhoenixDateBytes(CREATED_TIME, result);
+			if (createdTime == null) {
+				context.getCounter("hbase98", "miss_created_time").increment(1);
+				return;
+			}
+
+			Put put = createPut(result, id, createdTime);
+			puts.add(put);
+			if (puts.size() >= bucketSize) {
+				flush(context);
+			}
+		}
+
+		@Override
+		protected void setup(Context context) throws IOException, InterruptedException {
+			super.setup(context);
+			Configuration conf = context.getConfiguration();
+			this.bucketSize = conf.getInt(BUCKET_SIZE, 30000);
+			this.saltBytes = conf.getInt(SALT_BYTES, -1);
+			this.offset = Bytes.SIZEOF_LONG - this.saltBytes;
+			org.apache98.hadoop.conf.Configuration conf98 = HBaseConfiguration.create();
+			// conf98.set("hbase.client.write.buffer", "20971520");
+			conf98.set(HBASE_ZOOKEEPER_QUORUM, conf.get(HBASE_ZOOKEEPER_QUORUM2));
+			HConnection connection = HConnectionManager.createConnection(conf98);
+			table = (org.apache98.hadoop.hbase.client.HTable) connection.getTable(conf.get(NEW_TABLE_NAME));
+			table.setAutoFlushTo(false);
+		}
+
+		private Put createPut(Result result, byte[] id, byte[] createdTime) {
+			Put put = new Put(getRow(id));
 			put.setDurability(Durability.SKIP_WAL);
 
 			put(result, ID_ORIG, put, ORIGINAL_ID);
@@ -296,11 +366,20 @@ public class CopyTable2 extends Configured implements Tool {
 			return put;
 		}
 
-		private static byte[] getBytes(byte[] qualifier, Result result) {
+		private void flush(Context context) throws IOException {
+			int putSize = puts.size();
+			if (putSize > 0) {
+				HTableUtil.bucketRsPut(table, puts);
+				context.getCounter("hbase98", "put").increment(putSize);
+				puts.clear();
+			}
+		}
+
+		private byte[] getBytes(byte[] qualifier, Result result) {
 			return result.getValue(M, qualifier);
 		}
 
-		private static Integer getInteger(byte[] qualifier, Result result) {
+		private Integer getInteger(byte[] qualifier, Result result) {
 			byte[] value = getBytes(qualifier, result);
 			if (value == null) {
 				return null;
@@ -308,7 +387,7 @@ public class CopyTable2 extends Configured implements Tool {
 			return Integer.valueOf(Bytes.toString(value));
 		}
 
-		private static byte[] getPhoenixDateBytes(byte[] qualifier, Result result) {
+		private byte[] getPhoenixDateBytes(byte[] qualifier, Result result) {
 			String value = getString(qualifier, result);
 			if (value == null) {
 				return null;
@@ -321,7 +400,7 @@ public class CopyTable2 extends Configured implements Tool {
 			}
 		}
 
-		private static byte[] getPhoenixIntegerBytes(byte[] qualifier, Result result) {
+		private byte[] getPhoenixIntegerBytes(byte[] qualifier, Result result) {
 			Integer value = getInteger(qualifier, result);
 			if (value == null) {
 				return null;
@@ -334,7 +413,20 @@ public class CopyTable2 extends Configured implements Tool {
 			}
 		}
 
-		private static String getString(byte[] qualifier, Result result) {
+		private byte[] getRow(byte[] row) {
+			if (saltBytes > 0) {
+				ByteBuffer rb = ByteBuffer.allocate(row.length + saltBytes);
+				crc.update(row);
+				long value = crc.getValue();
+				byte[] bytes = toBytes(value);
+				rb.put(bytes, offset, saltBytes);
+				rb.put(row);
+				row = rb.array();
+			}
+			return row;
+		}
+
+		private String getString(byte[] qualifier, Result result) {
 			byte[] value = getBytes(qualifier, result);
 			if (value == null) {
 				return null;
@@ -342,82 +434,44 @@ public class CopyTable2 extends Configured implements Tool {
 			return Bytes.toString(value);
 		}
 
-		private static void put(Put put, byte[] qualifier, byte[] value) {
+		private void put(Put put, byte[] qualifier, byte[] value) {
 			if (value == null) {
 				return;
 			}
 			put.add(D, qualifier, value);
 		}
 
-		private static void put(Result result, byte[] qualifierSource, Put put, byte[] qualifierTarget) {
+		private void put(Result result, byte[] qualifierSource, Put put, byte[] qualifierTarget) {
 			put(put, qualifierTarget, getBytes(qualifierSource, result));
 		}
 
-		private static byte[] toPhoenixDate(String value) {
+		private byte[] toPhoenixDate(String value) {
 			if (value == null) {
 				return null;
 			}
-			Date date = new Date(Long.valueOf(value) * 1000);
+			Date date;
+			if (NumberUtils.isDigits(value)) {
+				date = new Date(Long.valueOf(value) * 1000);
+			} else {
+				try {
+					date = sdf.parse(value);
+				} catch (ParseException e) {
+					value = value.replaceFirst("([0-9]{2}):([0-9]{2})$", "$1$2");
+					try {
+						date = sdf.parse(value);
+					} catch (ParseException e1) {
+						System.err.println(e.getMessage());
+						System.err.println(e1.getMessage());
+						date = null;
+					}
+				}
+			}
+			// 2013-07-08T17:10:16+00:00
 			return PDataType.DATE.toBytes(date);
 		}
 
-		private static byte[] toPhoenixInteger(Integer value) {
+		private byte[] toPhoenixInteger(Integer value) {
 			return PDataType.INTEGER.toBytes(value);
-		}
-
-		// private static final byte[] _D = Bytes.toBytes("d");
-		private org.apache98.hadoop.hbase.client.HTable table;
-		private List<Put> puts = new ArrayList<Put>();
-		private static int BATCH_SIZE = 2000;
-
-		@Override
-		protected void cleanup(Context context) throws IOException, InterruptedException {
-			super.cleanup(context);
-			flush(context);
-		}
-
-		@Override
-		protected void map(ImmutableBytesWritable key, Result result, Context context) throws IOException,
-				InterruptedException {
-
-			byte[] id = getBytes(ID, result);
-			if (id == null) {
-				context.getCounter("hbase98", "miss_id").increment(1);
-				return;
-			}
-
-			byte[] createdTime = getPhoenixDateBytes(CREATED_TIME, result);
-			if (createdTime == null) {
-				context.getCounter("hbase98", "miss_created_time").increment(1);
-				return;
-			}
-
-			Put put = createPut(result, id, createdTime);
-			puts.add(put);
-			if (puts.size() >= BATCH_SIZE) {
-				flush(context);
-			}
-		}
-
-		@Override
-		protected void setup(Context context) throws IOException, InterruptedException {
-			super.setup(context);
-			Configuration conf = context.getConfiguration();
-			org.apache98.hadoop.conf.Configuration conf98 = HBaseConfiguration.create();
-			// conf98.set("hbase.client.write.buffer", "20971520");
-			conf98.set(HBASE_ZOOKEEPER_QUORUM, conf.get(HBASE_ZOOKEEPER_QUORUM2));
-			HConnection connection = HConnectionManager.createConnection(conf98);
-			table = (org.apache98.hadoop.hbase.client.HTable) connection.getTable(conf.get(NEW_TABLE_NAME));
-			table.setAutoFlushTo(false);
-		}
-
-		private void flush(Context context) throws IOException {
-			int putSize = puts.size();
-			if (putSize > 0) {
-				HTableUtil.bucketRsPut(table, puts);
-				context.getCounter("hbase98", "put").increment(putSize);
-				puts.clear();
-			}
 		}
 
 	}
