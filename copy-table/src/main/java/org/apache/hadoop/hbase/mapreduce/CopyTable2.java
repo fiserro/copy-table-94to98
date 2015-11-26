@@ -312,7 +312,7 @@ public class CopyTable2 extends Configured implements Tool {
 			put.setDurability(Durability.SKIP_WAL);
 
 			put(result, ID_ORIG, put, ORIGINAL_ID);
-			put(result, OBJECT_ID, put, OBJECT_ID);
+			// put(result, OBJECT_ID, put, OBJECT_ID);
 			put(result, MESSAGE, put, MESSAGE);
 			put(put, CREATED_TIME, createdTime);
 			put(result, USER_ID, put, AUTHOR_ID);
