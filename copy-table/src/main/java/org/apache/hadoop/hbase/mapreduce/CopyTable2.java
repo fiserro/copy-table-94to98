@@ -1,40 +1,14 @@
 package org.apache.hadoop.hbase.mapreduce;
 
-import static org.apache.commons.lang.StringUtils.isNotBlank;
-import static org.apache.hadoop.hbase.mapreduce.Statics.BUCKET_SIZE;
-import static org.apache.hadoop.hbase.mapreduce.Statics.HBASE_ZOOKEEPER_QUORUM;
-import static org.apache.hadoop.hbase.mapreduce.Statics.HBASE_ZOOKEEPER_QUORUM2;
-import static org.apache.hadoop.hbase.mapreduce.Statics.NAME;
-import static org.apache.hadoop.hbase.mapreduce.Statics.NEW_TABLE_NAME;
-import static org.apache.hadoop.hbase.mapreduce.Statics.SALT_BYTES;
-import static org.apache.hadoop.hbase.mapreduce.Statics.allCells;
-import static org.apache.hadoop.hbase.mapreduce.Statics.bucketSize;
-import static org.apache.hadoop.hbase.mapreduce.Statics.doCommandLine;
-import static org.apache.hadoop.hbase.mapreduce.Statics.endTime;
-import static org.apache.hadoop.hbase.mapreduce.Statics.families;
-import static org.apache.hadoop.hbase.mapreduce.Statics.newTableName;
-import static org.apache.hadoop.hbase.mapreduce.Statics.regionSplit;
-import static org.apache.hadoop.hbase.mapreduce.Statics.saltBytes;
-import static org.apache.hadoop.hbase.mapreduce.Statics.startRow;
-import static org.apache.hadoop.hbase.mapreduce.Statics.startTime;
-import static org.apache.hadoop.hbase.mapreduce.Statics.stopRow;
-import static org.apache.hadoop.hbase.mapreduce.Statics.tableName;
-import static org.apache.hadoop.hbase.mapreduce.Statics.versions;
-import static org.apache.hadoop.hbase.mapreduce.Statics.zkQuorum;
+import static org.apache.hadoop.hbase.mapreduce.Statics.*;
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.zip.CRC32;
+import java.util.*;
+import java.util.Map.Entry;
 
-import org.apache.commons.lang.math.NumberUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.hbase.HConstants;
@@ -43,23 +17,23 @@ import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.lib.output.NullOutputFormat;
 import org.apache.hadoop.util.GenericOptionsParser;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
+import org.apache.phoenix.schema.PArrayDataType;
 import org.apache.phoenix.schema.PDataType;
+import org.apache.phoenix.schema.PhoenixArray;
 import org.apache98.hadoop.hbase.HBaseConfiguration;
-import org.apache98.hadoop.hbase.client.Durability;
 import org.apache98.hadoop.hbase.client.HConnection;
 import org.apache98.hadoop.hbase.client.HConnectionManager;
 import org.apache98.hadoop.hbase.client.HTableUtil;
 import org.apache98.hadoop.hbase.client.Put;
 
-import com.socialbakers.proto.SocialContents.SocialContent.Attachments;
-import com.socialbakers.proto.SocialContents.SocialContent.Attachments.Attachment;
-import com.socialbakers.proto.SocialContents.SocialContent.Attachments.Attachment.Builder;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Tool used to copy a table to another one which can be on a different setup.
@@ -68,9 +42,110 @@ import com.socialbakers.proto.SocialContents.SocialContent.Attachments.Attachmen
  */
 public class CopyTable2 extends Configured implements Tool {
 
+	private static final byte[] SBKS_EA_IS_ADMIN_POST = toBytes("sbks_ea_is_admin_post");
+	private static final byte[] FACEBOOK_IS_ADMIN_POST = toBytes("facebook.is_admin_post");
+
+	private static final byte[] SBKS_EA_RESPONSE_TIME = toBytes("sbks_ea_response_time");
+	private static final byte[] SBKS_RESPONDED_RESPONSE_TIME = toBytes("sbks.responded.response_time");
+
+	private static final byte[] SBKS_EA_ADMIN_COMMENT_ID = toBytes("sbks_ea_admin_comment_id");
+	private static final byte[] SBKS_RESPONDED_RESPONSE_ID = toBytes("sbks.responded.response_id");
+
+	private static final byte[] PAGE_ID = toBytes("page_id");
+	private static final byte[] PROFILE_ID = toBytes("profile_id");
+
+	private static final byte[] USER_ID = toBytes("user_id");
+	private static final byte[] AUTHOR_ID = toBytes("author_id");
+
+	private static final byte[] ID = toBytes("id");
+	private static final byte[] CREATED_TIME = toBytes("created_time");
+
+	private static final byte[] D = toBytes("d");
+	private static final byte[] M = toBytes("m");
+	private static final byte[] I = toBytes("i");
+
+	private static final Set<byte[]> SIMPLE_INTS = new TreeSet<byte[]>(Bytes.BYTES_COMPARATOR);
+
+	static {
+		SIMPLE_INTS.add(toBytes("stories"));
+		SIMPLE_INTS.add(toBytes("storytellers"));
+		SIMPLE_INTS.add(toBytes("story_adds"));
+		SIMPLE_INTS.add(toBytes("story_adds_unique"));
+		SIMPLE_INTS.add(toBytes("impressions"));
+		SIMPLE_INTS.add(toBytes("impressions_unique"));
+		SIMPLE_INTS.add(toBytes("impressions_fan"));
+		SIMPLE_INTS.add(toBytes("impressions_fan_unique"));
+		SIMPLE_INTS.add(toBytes("impressions_fan_paid"));
+		SIMPLE_INTS.add(toBytes("impressions_fan_paid_unique"));
+		SIMPLE_INTS.add(toBytes("impressions_organic"));
+		SIMPLE_INTS.add(toBytes("impressions_organic_unique"));
+		SIMPLE_INTS.add(toBytes("impressions_paid"));
+		SIMPLE_INTS.add(toBytes("impressions_paid_unique"));
+		SIMPLE_INTS.add(toBytes("impressions_viral"));
+		SIMPLE_INTS.add(toBytes("impressions_viral_unique"));
+		SIMPLE_INTS.add(toBytes("consumptions"));
+		SIMPLE_INTS.add(toBytes("consumptions_unique"));
+		SIMPLE_INTS.add(toBytes("fan_reach"));
+		SIMPLE_INTS.add(toBytes("engaged_fan"));
+		SIMPLE_INTS.add(toBytes("engaged_users"));
+		SIMPLE_INTS.add(toBytes("negative_feedback"));
+		SIMPLE_INTS.add(toBytes("negative_feedback_unique"));
+		SIMPLE_INTS.add(toBytes("video_length"));
+		SIMPLE_INTS.add(toBytes("video_complete_views_organic"));
+		SIMPLE_INTS.add(toBytes("video_complete_views_organic_unique"));
+		SIMPLE_INTS.add(toBytes("video_complete_views_paid"));
+		SIMPLE_INTS.add(toBytes("video_complete_views_paid_unique"));
+		SIMPLE_INTS.add(toBytes("video_views"));
+		SIMPLE_INTS.add(toBytes("video_views_unique"));
+		SIMPLE_INTS.add(toBytes("video_views_autoplayed"));
+		SIMPLE_INTS.add(toBytes("video_views_organic"));
+		SIMPLE_INTS.add(toBytes("video_views_organic_unique"));
+		SIMPLE_INTS.add(toBytes("video_views_paid"));
+		SIMPLE_INTS.add(toBytes("video_views_paid_unique"));
+		SIMPLE_INTS.add(toBytes("video_views_clicked_to_play"));
+		SIMPLE_INTS.add(toBytes("video_complete_views_30s"));
+		SIMPLE_INTS.add(toBytes("video_complete_views_30s_paid"));
+		SIMPLE_INTS.add(toBytes("video_complete_views_30s_organic"));
+		SIMPLE_INTS.add(toBytes("video_complete_views_30s_unique"));
+		SIMPLE_INTS.add(toBytes("video_complete_views_30s_autoplayed"));
+		SIMPLE_INTS.add(toBytes("video_complete_views_30s_clicked_to_play"));
+	}
+
+	private static final Set<byte[]> NESTED_INTS = new TreeSet<byte[]>(Bytes.BYTES_COMPARATOR);
+
+	static {
+		NESTED_INTS.add(toBytes("stories_by_action_type"));
+		NESTED_INTS.add(toBytes("storytellers_by_action_type"));
+		NESTED_INTS.add(toBytes("story_adds_by_action_type"));
+		NESTED_INTS.add(toBytes("story_adds_by_action_type_unique"));
+		NESTED_INTS.add(toBytes("impressions_by_paid_non_paid"));
+		NESTED_INTS.add(toBytes("impressions_by_paid_non_paid_unique"));
+		NESTED_INTS.add(toBytes("impressions_by_story_type"));
+		NESTED_INTS.add(toBytes("impressions_by_story_type_unique"));
+		NESTED_INTS.add(toBytes("consumptions_by_type"));
+		NESTED_INTS.add(toBytes("consumptions_by_type_unique"));
+		NESTED_INTS.add(toBytes("negative_feedback_by_type"));
+		NESTED_INTS.add(toBytes("negative_feedback_by_type_unique"));
+	}
+
+	private static final Set<byte[]> SIMPLE_FLOATS = new TreeSet<byte[]>(Bytes.BYTES_COMPARATOR);
+
+	static {
+		SIMPLE_FLOATS.add(toBytes("video_avg_time_watched"));
+	}
+
+	// DOUBLE
+	private static final Set<byte[]> ARRAY_DOUBLES = new TreeSet<byte[]>(Bytes.BYTES_COMPARATOR);
+
+	static {
+		ARRAY_DOUBLES.add(toBytes("video_retention_graph"));
+		ARRAY_DOUBLES.add(toBytes("video_retention_graph_autoplayed"));
+		ARRAY_DOUBLES.add(toBytes("video_retention_graph_clicked_to_play"));
+	}
+
 	/**
 	 * Sets up the actual job.
-	 * 
+	 *
 	 * @param conf
 	 *            The current configuration.
 	 * @param args
@@ -79,8 +154,7 @@ public class CopyTable2 extends Configured implements Tool {
 	 * @throws IOException
 	 *             When setting up the job fails.
 	 */
-	public static Job createSubmittableJob(Configuration conf, String[] args)
-			throws IOException {
+	public static Job createSubmittableJob(Configuration conf, String[] args) throws IOException {
 		if (!doCommandLine(args)) {
 			return null;
 		}
@@ -88,8 +162,7 @@ public class CopyTable2 extends Configured implements Tool {
 		Scan scan = new Scan();
 		scan.setCacheBlocks(false);
 		if (startTime != 0) {
-			scan.setTimeRange(startTime,
-					endTime == 0 ? HConstants.LATEST_TIMESTAMP : endTime);
+			scan.setTimeRange(startTime, endTime == 0 ? HConstants.LATEST_TIMESTAMP : endTime);
 		}
 		if (allCells) {
 			scan.setRaw(true);
@@ -113,33 +186,26 @@ public class CopyTable2 extends Configured implements Tool {
 		} else {
 			jobName += "-lastRow";
 		}
+		scan.setCaching(400);
+		scan.addColumn(D, ID);
+		scan.addColumn(D, CREATED_TIME);
+		scan.addColumn(D, USER_ID);
+		scan.addColumn(D, PAGE_ID);
+		scan.addColumn(D, SBKS_EA_ADMIN_COMMENT_ID);
+		scan.addColumn(D, SBKS_EA_IS_ADMIN_POST);
+		scan.addColumn(M, ID);
+		scan.addColumn(M, CREATED_TIME);
+		scan.addColumn(M, USER_ID);
+		scan.addColumn(M, PAGE_ID);
+		scan.addColumn(M, SBKS_EA_ADMIN_COMMENT_ID);
+		scan.addColumn(M, SBKS_EA_IS_ADMIN_POST);
+		scan.addFamily(I);
 
 		Job job = new Job(conf, jobName);
 		job.setJarByClass(CopyTable2.class);
-		if (families != null) {
-			String[] fams = families.split(",");
-			Map<String, String> cfRenameMap = new HashMap<String, String>();
-			for (String fam : fams) {
-				String sourceCf;
-				if (fam.contains(":")) {
-					// fam looks like "sourceCfName:destCfName"
-					String[] srcAndDest = fam.split(":", 2);
-					sourceCf = srcAndDest[0];
-					String destCf = srcAndDest[1];
-					cfRenameMap.put(sourceCf, destCf);
-				} else {
-					// fam is just "sourceCf"
-					sourceCf = fam;
-				}
-				scan.addFamily(Bytes.toBytes(sourceCf));
-			}
-			Import.configureCfRenaming(job.getConfiguration(), cfRenameMap);
-		}
-		scan.setCaching(400);
 
 		job.setSpeculativeExecution(false);
-		TableMapReduceUtil.initTableMapperJob(tableName, scan, Mapper94_98.class, null, null, job, true,
-				RegionSplitTableInputFormat.class);
+		TableMapReduceUtil.initTableMapperJob(tableName, scan, Mapper94_98.class, null, null, job, true, RegionSplitTableInputFormat.class);
 
 		job.setOutputFormatClass(NullOutputFormat.class);
 		job.setNumReduceTasks(0);
@@ -165,21 +231,14 @@ public class CopyTable2 extends Configured implements Tool {
 
 	/**
 	 * Main entry point.
-	 * 
+	 *
 	 * @param args
 	 *            The command line parameters.
 	 * @throws Exception
 	 *             When running the job fails.
 	 */
 	public static void main(String[] args) throws Exception {
-		Configuration c = new Configuration();
-		// c.set("hbase.rootdir", "hdfs://hadoops-master:9000/hbase");
-		int ret = ToolRunner.run(new CopyTable2(c), args);
-		System.exit(ret);
-	}
-
-	public CopyTable2(Configuration conf) {
-		super(conf);
+		System.exit(ToolRunner.run(new CopyTable2(), args));
 	}
 
 	@Override
@@ -194,74 +253,152 @@ public class CopyTable2 extends Configured implements Tool {
 
 	private static class Mapper94_98 extends TableMapper<ImmutableBytesWritable, KeyValue> {
 
-		private static final byte[] M = toBytes("m");
-		private static final byte[] D = toBytes("d");
-		private static final byte[] ID = toBytes("id");
-		private static final byte[] ATTACH_TYPE = toBytes("attach_type");
-		private static final byte[] ATTACH_SRC = toBytes("attach_src");
-		private static final byte[] ATTACH_URL = toBytes("attach_url");
-		private static final byte[] ATTACH_TARGET = toBytes("attach_target");
-		private static final byte[] ATTACH_H = toBytes("attach_h");
-		private static final byte[] ATTACH_W = toBytes("attach_w");
-		private static final byte[] ATTACHMENTS = toBytes("attachments");
-		private static final byte[] CREATED_TIME = toBytes("created_time");
-		private static final byte[] ID_ORIG = toBytes("id_orig");
-		private static final byte[] ORIGINAL_ID = toBytes("original_id");
-		private static final byte[] OBJECT_ID = toBytes("object_id");
-		private static final byte[] MESSAGE = toBytes("message");
-		private static final byte[] AUTHOR_ID = toBytes("author_id");
-		private static final byte[] USER_ID = toBytes("user_id");
-		private static final byte[] POST_ID = toBytes("post_id");
-		private static final byte[] PARENT_ID = toBytes("parent_id");
-		private static final byte[] LIKE_COUNT = toBytes("like_count");
-		private static final byte[] LIKES = toBytes("likes");
-		private static final byte[] FACEBOOK_PARENT_COMMENT_ID = toBytes("facebook.parent_comment_id");
+		private static final byte[] OBJECT_OBJECT = toBytes("[object Object]");
+		private static final byte[] EMPTY_ARRAY = toBytes("[]");
+		private static final byte TRUE_BYTE = toBytes("1")[0];
+		private static final String DOT = ".";
+		private static final byte[] DOT_BYTES = toBytes(DOT);
 
-		// public static void main(String[] args) throws ZooKeeperConnectionException, IOException, InterruptedException
-		// {
-		//
-		// UserGroupInformation ugi = UserGroupInformation.createRemoteUser("hbase");
-		// PrivilegedExceptionAction<Put> action = new PrivilegedExceptionAction<Put>() {
-		// @Override
-		// public Put run() throws Exception {
-		// Configuration conf = org.apache.hadoop.hbase.HBaseConfiguration.create();
-		// conf.set("hbase.zookeeper.quorum", "zookeeper1");
-		// HTable table = new HTable(conf, "fb_comments");
-		// Get get = new Get(
-		// toBytesBinary("00_\\x00\\x00\\x00\\x01?\\x1C\\xA3<_\\x7F\\xDB\\xBC\\xA0\\x81{\\xE8m_\\x7F\\xDB\\xBC\\xA0o\\xEF\\x9B\\xAD"));
-		// Result result = table.get(get);
-		// byte[] id = getBytes(ID, result);
-		// byte[] createdTime = getPhoenixDateBytes(CREATED_TIME, result);
-		// Put put = createPut(result, id, createdTime);
-		// table.close();
-		//
-		// return put;
-		// }
-		//
-		// };
-		// Put put = ugi.doAs(action);
-		//
-		// org.apache98.hadoop.conf.Configuration conf98 = HBaseConfiguration.create();
-		// conf98.set("hbase.zookeeper.quorum", "c-sencha-s01");
-		// HTableInterface table98 = HConnectionManager.createConnection(conf98).getTable("fb_comments");
-		// table98.put(put);
-		// table98.close();
-		// }
+		private static final String SKIP_ATTR = "%skip_cpr%";
 
-		// private static final byte[] _D = Bytes.toBytes("d");
+		private static final byte[] SKIP_ATTR_VAL = new byte[] { 1 };
+
 		private org.apache98.hadoop.hbase.client.HTable table;
-
-		private List<Put> puts = new ArrayList<Put>();
 
 		int bucketSize = 30000;
 
-		private int saltBytes;
+		private List<Put> puts = new ArrayList<Put>();
 
-		int offset;
+		private Converter integerC = new Converter() {
+			@Override
+			public byte[] convert(byte[] value, Context context) {
+				try {
+					return PDataType.INTEGER.toBytes(Integer.valueOf(Bytes.toString(value)));
+				} catch (Exception e) {
+					e.printStackTrace();
+					context.getCounter("err", "converter.integer.err").increment(1);
+					return null;
+				}
+			}
+		};
 
-		private CRC32 crc = new CRC32();
+		private Converter longC = new Converter() {
+			@Override
+			public byte[] convert(byte[] value, Context context) {
+				try {
+					return PDataType.LONG.toBytes(Integer.valueOf(Bytes.toString(value)));
+				} catch (Exception e) {
+					e.printStackTrace();
+					context.getCounter("err", "converter.long.err").increment(1);
+					return null;
+				}
+			}
+		};
 
-		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ");
+		private Converter floatC = new Converter() {
+			@Override
+			public byte[] convert(byte[] value, Context context) {
+				try {
+					String string = Bytes.toString(value);
+					string = string.replaceAll("\"", "");
+					return PDataType.FLOAT.toBytes(Integer.valueOf(string));
+				} catch (Exception e) {
+					e.printStackTrace();
+					context.getCounter("err", "converter.float.err").increment(1);
+					return null;
+				}
+			}
+		};
+
+		private Converter booleanC = new Converter() {
+			@Override
+			public byte[] convert(byte[] value, Context context) {
+				try {
+					return PDataType.BOOLEAN.toBytes(value != null && value.length > 0 && value[0] == TRUE_BYTE);
+				} catch (Exception e) {
+					e.printStackTrace();
+					context.getCounter("err", "converter.boolean.err").increment(1);
+					return null;
+				}
+			}
+		};
+
+		private Converter doubleArrayC = new Converter() {
+			@Override
+			public byte[] convert(byte[] value, Context context) {
+				String string = Bytes.toString(value);
+				try {
+					List<Double> doubles = new ArrayList<Double>();
+					if (string.startsWith("[")) {
+						string = string.replaceFirst("\\[", "").replaceFirst("\\]", "");
+						for (String dStr : string.split(",")) {
+							doubles.add(Double.valueOf(dStr.trim()));
+						}
+					} else if (string.startsWith("{")) {
+						NavigableMap<Integer, Double> sortedMap = new TreeMap<Integer, Double>();
+						for (Entry<String, Object> entry : ((Map<String, Object>) mapper.readValue(string, Map.class)).entrySet()) {
+							sortedMap.put(Integer.valueOf(entry.getKey()), Double.valueOf(entry.getValue().toString()));
+						}
+						doubles.addAll(sortedMap.values());
+					}
+					PhoenixArray phoenixArray = PArrayDataType.instantiatePhoenixArray(PDataType.DOUBLE, doubles.toArray());
+					return PDataType.DOUBLE_ARRAY.toBytes(phoenixArray);
+				} catch (Exception e) {
+					System.err.println("double_array_err:" + string);
+					e.printStackTrace();
+					context.getCounter("err", "converter.double_array.err").increment(1);
+					return null;
+				}
+			}
+		};
+		private Converter dateC = new Converter() {
+
+			private final String[] formats = new String[] { "yyyy-MM-dd'T'HH:mm:ssZ", "yyyy-MM-dd'T'HH:mm:ss",
+					"yyyy-MM-dd'T'HH:mm:ss.SSS'Z'" };
+
+			@Override
+			public byte[] convert(byte[] value, Context context) {
+
+				try {
+					String string = Bytes.toString(value);
+					Date date;
+					if (string.matches("[0-9]{1,11}")) {
+						date = new Date(Long.valueOf(string) * 1000);
+					} else if (string.matches("[0-9]{11,}")) {
+						date = new Date(Long.valueOf(string));
+					} else {
+						date = null;
+						if (string.matches(".*?[\\+\\- ]([0-9]{2}):([0-9]{2})$")) {
+							string = string.replaceFirst("([0-9]{2}):([0-9]{2})$", "$1$2");
+						}
+						for (String format : formats) {
+							SimpleDateFormat sdf = new SimpleDateFormat(format);
+							sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
+							try {
+								date = sdf.parse(string);
+								break;
+							} catch (ParseException e1) {
+							}
+						}
+					}
+					if (date == null) {
+						System.err.println("Can't parse date: '" + string + "'");
+						context.getCounter("err", "converter.date.err").increment(1);
+						return null;
+					}
+					return PDataType.DATE.toBytes(date);
+
+				} catch (Exception e) {
+					e.printStackTrace();
+					context.getCounter("err", "converter.date.err").increment(1);
+					return null;
+				}
+			}
+		};
+
+		private ObjectMapper mapper = new ObjectMapper();
+		private Map<byte[], Map<String, Pair<byte[], String>>> nestedQualifiers = new TreeMap<byte[], Map<String, Pair<byte[], String>>>(
+				Bytes.BYTES_COMPARATOR);
 
 		@Override
 		protected void cleanup(Context context) throws IOException, InterruptedException {
@@ -269,23 +406,89 @@ public class CopyTable2 extends Configured implements Tool {
 			flush(context);
 		}
 
+		@SuppressWarnings("unchecked")
 		@Override
-		protected void map(ImmutableBytesWritable key, Result result, Context context) throws IOException,
-				InterruptedException {
+		protected void map(ImmutableBytesWritable key, Result result, Context context) throws IOException, InterruptedException {
 
-			byte[] id = getBytes(ID, result);
+			byte[] id = getValue(ID, result);
 			if (id == null) {
-				context.getCounter("hbase98", "miss_id").increment(1);
+				context.getCounter("err", "miss_id").increment(1);
 				return;
 			}
 
-			byte[] createdTime = getPhoenixDateBytes(CREATED_TIME, result);
+			byte[] createdTime = getValue(CREATED_TIME, result);
 			if (createdTime == null) {
-				context.getCounter("hbase98", "miss_created_time").increment(1);
+				context.getCounter("err", "miss_created_time").increment(1);
 				return;
 			}
 
-			Put put = createPut(result, id, createdTime);
+			Put put = new Put(id);
+			put.setAttribute(SKIP_ATTR, SKIP_ATTR_VAL);
+			put(result, CREATED_TIME, put, D, CREATED_TIME, dateC, context);
+			if (!put.has(D, CREATED_TIME)) {
+				return;
+			}
+			put(result, USER_ID, put, D, AUTHOR_ID, null, context);
+			put(result, PAGE_ID, put, D, PROFILE_ID, null, context);
+			put(result, SBKS_EA_RESPONSE_TIME, put, D, SBKS_RESPONDED_RESPONSE_TIME, longC, context);
+			put(result, SBKS_EA_ADMIN_COMMENT_ID, put, D, SBKS_RESPONDED_RESPONSE_ID, null, context);
+			put(result, SBKS_EA_IS_ADMIN_POST, put, D, FACEBOOK_IS_ADMIN_POST, booleanC, context);
+
+			NavigableMap<byte[], byte[]> familyMap = result.getFamilyMap(I);
+			if (familyMap != null) {
+				for (Entry<byte[], byte[]> entry : familyMap.entrySet()) {
+					byte[] value = entry.getValue();
+					byte[] qualifier = entry.getKey();
+					if (value == null || value.length == 0) {
+						context.getCounter("insights", "miss_value").increment(1);
+						continue;
+					}
+					if (Bytes.equals(value, OBJECT_OBJECT)) {
+						context.getCounter("insights", "object_object").increment(1);
+						continue;
+					}
+					if (Bytes.equals(value, EMPTY_ARRAY)) {
+						context.getCounter("insights", "empty_array").increment(1);
+						continue;
+					}
+
+					if (SIMPLE_FLOATS.contains(qualifier)) {
+						put(put, I, qualifier, value, floatC, context);
+					} else if (SIMPLE_INTS.contains(qualifier)) {
+						put(put, I, qualifier, value, integerC, context);
+					} else if (ARRAY_DOUBLES.contains(qualifier)) {
+						put(put, I, qualifier, value, doubleArrayC, context);
+					} else if (NESTED_INTS.contains(qualifier)) {
+						try {
+							Object object = mapper.readValue(value, Object.class);
+							if (object instanceof List) {
+								System.err.println(object);
+								context.getCounter("insights", "list").increment(1);
+								continue;
+							}
+							for (Entry<String, Object> entry2 : ((Map<String, Object>) object).entrySet()) {
+								if (entry2.getValue() == null) {
+									continue;
+								}
+								// String qualifierS = getQString(qualifier, entry2.getKey());
+								String string = entry2.getValue().toString();
+								Integer integer;
+								try {
+									integer = Integer.valueOf(string);
+								} catch (Exception e) {
+									context.getCounter("insights", "-not-a-number").increment(1);
+									System.out.println(string);
+									continue;
+								}
+								put(put, D, getQBytes(qualifier, entry2.getKey()), PDataType.INTEGER.toBytes(integer), context);
+							}
+						} catch (Exception e) {
+							e.printStackTrace();
+							context.getCounter("insights", "exception").increment(1);
+						}
+					}
+				}
+			}
 			puts.add(put);
 			if (puts.size() >= bucketSize) {
 				flush(context);
@@ -296,9 +499,7 @@ public class CopyTable2 extends Configured implements Tool {
 		protected void setup(Context context) throws IOException, InterruptedException {
 			super.setup(context);
 			Configuration conf = context.getConfiguration();
-			this.bucketSize = conf.getInt(BUCKET_SIZE, 30000);
-			this.saltBytes = conf.getInt(SALT_BYTES, -1);
-			this.offset = Bytes.SIZEOF_LONG - this.saltBytes;
+			this.bucketSize = conf.getInt(BUCKET_SIZE, 4000);
 			org.apache98.hadoop.conf.Configuration conf98 = HBaseConfiguration.create();
 			// conf98.set("hbase.client.write.buffer", "20971520");
 			conf98.set(HBASE_ZOOKEEPER_QUORUM, conf.get(HBASE_ZOOKEEPER_QUORUM2));
@@ -307,171 +508,71 @@ public class CopyTable2 extends Configured implements Tool {
 			table.setAutoFlushTo(false);
 		}
 
-		private Put createPut(Result result, byte[] id, byte[] createdTime) {
-			Put put = new Put(getRow(id));
-			put.setDurability(Durability.SKIP_WAL);
-
-			put(result, ID_ORIG, put, ORIGINAL_ID);
-			// put(result, OBJECT_ID, put, OBJECT_ID);
-			put(result, MESSAGE, put, MESSAGE);
-			put(put, CREATED_TIME, createdTime);
-			put(result, USER_ID, put, AUTHOR_ID);
-			put(result, POST_ID, put, PARENT_ID);
-			put(put, LIKE_COUNT, getPhoenixIntegerBytes(LIKES, result));
-			put(result, PARENT_ID, put, FACEBOOK_PARENT_COMMENT_ID);
-
-			String attach_type = getString(ATTACH_TYPE, result);
-			String attach_src = getString(ATTACH_SRC, result);
-			String attach_url = getString(ATTACH_URL, result);
-			String attach_target = getString(ATTACH_TARGET, result);
-			Integer attach_h = getInteger(ATTACH_H, result);
-			Integer attach_w = getInteger(ATTACH_W, result);
-			Attachments.Builder attachmentsBuilder = Attachments.newBuilder();
-			if (isNotBlank(attach_type) || isNotBlank(attach_src) || isNotBlank(attach_url) || isNotBlank(attach_target)
-					|| attach_h != null || attach_w != null) {
-				Builder attachmentBuilder = Attachment.newBuilder();
-				if (isNotBlank(attach_type)) {
-					attachmentBuilder.setObjectType(attach_type);
-				}
-				if (isNotBlank(attach_src)) {
-					attachmentBuilder.setDisplayName(attach_src);
-				}
-				if (isNotBlank(attach_url)) {
-					attachmentBuilder.setId(attach_url);
-				}
-				if (isNotBlank(attach_target)) {
-					attachmentBuilder.setContent(attach_target);
-				}
-
-				Attachment.Image.Builder imageBuilder = Attachment.Image.newBuilder();
-				if (isNotBlank(attach_url)) {
-					imageBuilder.setUrl(attach_url);
-				}
-				if (isNotBlank(attach_type)) {
-					imageBuilder.setType(attach_type);
-				}
-				if (attach_h != null) {
-					imageBuilder.setHeight(attach_h);
-				}
-				if (attach_w != null) {
-					imageBuilder.setWidth(attach_w);
-				}
-				if (imageBuilder.hasUrl() || imageBuilder.hasType() || imageBuilder.hasHeight() || imageBuilder.hasWidth()) {
-					attachmentBuilder.setImage(imageBuilder);
-				}
-
-				attachmentsBuilder.addAttachment(attachmentBuilder);
-				put(put, ATTACHMENTS, attachmentsBuilder.build().toByteArray());
-			}
-			return put;
-		}
-
 		private void flush(Context context) throws IOException {
 			int putSize = puts.size();
 			if (putSize > 0) {
 				HTableUtil.bucketRsPut(table, puts);
+				context.getCounter("hbase98", "flush").increment(1);
 				context.getCounter("hbase98", "put").increment(putSize);
 				puts.clear();
 			}
 		}
 
-		private byte[] getBytes(byte[] qualifier, Result result) {
-			return result.getValue(M, qualifier);
+		private byte[] getQBytes(byte[] qualifier, String sub) {
+			return getQPair(qualifier, sub).getFirst();
 		}
 
-		private Integer getInteger(byte[] qualifier, Result result) {
-			byte[] value = getBytes(qualifier, result);
-			if (value == null) {
-				return null;
+		private Pair<byte[], String> getQPair(byte[] qualifier, String sub) {
+			Map<String, Pair<byte[], String>> subMap = nestedQualifiers.get(qualifier);
+			if (subMap == null) {
+				subMap = new HashMap<String, Pair<byte[], String>>();
+				nestedQualifiers.put(qualifier, subMap);
 			}
-			return Integer.valueOf(Bytes.toString(value));
+			Pair<byte[], String> pair = subMap.get(sub);
+			if (pair == null) {
+				pair = new Pair<byte[], String>(Bytes.add(qualifier, DOT_BYTES, toBytes(sub)), Bytes.toString(qualifier) + DOT + sub);
+				subMap.put(sub, pair);
+			}
+			return pair;
 		}
 
-		private byte[] getPhoenixDateBytes(byte[] qualifier, Result result) {
-			String value = getString(qualifier, result);
-			if (value == null) {
-				return null;
+		private String getQString(byte[] qualifier, String sub) {
+			return getQPair(qualifier, sub).getSecond();
+		}
+
+		private byte[] getValue(byte[] qualifier, Result result) {
+			byte[] authorId = result.getValue(D, qualifier);
+			if (authorId == null) {
+				authorId = result.getValue(M, qualifier);
 			}
-			try {
-				return toPhoenixDate(value);
-			} catch (Exception e) {
-				e.printStackTrace();
-				return null;
+			return authorId;
+		}
+
+		private void put(Put target, byte[] family, byte[] qualifier, byte[] value, Context context) {
+			if (value != null && value.length > 0) {
+				target.add(family, qualifier, value);
+				// context.getCounter("hbasee98", "put" + Bytes.toString(family) + ":" +
+				// Bytes.toString(qualifier)).increment(1);
 			}
 		}
 
-		private byte[] getPhoenixIntegerBytes(byte[] qualifier, Result result) {
-			Integer value = getInteger(qualifier, result);
-			if (value == null) {
-				return null;
-			}
-			try {
-				return toPhoenixInteger(value);
-			} catch (Exception e) {
-				e.printStackTrace();
-				return null;
-			}
-		}
-
-		private byte[] getRow(byte[] row) {
-			if (saltBytes > 0) {
-				ByteBuffer rb = ByteBuffer.allocate(row.length + saltBytes);
-				crc.update(row);
-				long value = crc.getValue();
-				byte[] bytes = toBytes(value);
-				rb.put(bytes, offset, saltBytes);
-				rb.put(row);
-				row = rb.array();
-			}
-			return row;
-		}
-
-		private String getString(byte[] qualifier, Result result) {
-			byte[] value = getBytes(qualifier, result);
-			if (value == null) {
-				return null;
-			}
-			return Bytes.toString(value);
-		}
-
-		private void put(Put put, byte[] qualifier, byte[] value) {
-			if (value == null) {
-				return;
-			}
-			put.add(D, qualifier, value);
-		}
-
-		private void put(Result result, byte[] qualifierSource, Put put, byte[] qualifierTarget) {
-			put(put, qualifierTarget, getBytes(qualifierSource, result));
-		}
-
-		private byte[] toPhoenixDate(String value) {
-			if (value == null) {
-				return null;
-			}
-			Date date;
-			if (NumberUtils.isDigits(value)) {
-				date = new Date(Long.valueOf(value) * 1000);
-			} else {
-				try {
-					date = sdf.parse(value);
-				} catch (ParseException e) {
-					value = value.replaceFirst("([0-9]{2}):([0-9]{2})$", "$1$2");
-					try {
-						date = sdf.parse(value);
-					} catch (ParseException e1) {
-						System.err.println(e.getMessage());
-						System.err.println(e1.getMessage());
-						date = null;
-					}
+		private void put(Put target, byte[] family, byte[] qualifier, byte[] value, Converter converter, Context context) {
+			if (value != null && value.length > 0) {
+				if (converter != null) {
+					value = converter.convert(value, context);
 				}
+				put(target, family, qualifier, value, context);
 			}
-			// 2013-07-08T17:10:16+00:00
-			return PDataType.DATE.toBytes(date);
 		}
 
-		private byte[] toPhoenixInteger(Integer value) {
-			return PDataType.INTEGER.toBytes(value);
+		private void put(Result source, byte[] qualifierS, Put target, byte[] familyT, byte[] qualifierT, Converter converter,
+				Context context) {
+			byte[] value = getValue(qualifierS, source);
+			put(target, familyT, qualifierT, value, converter, context);
+		}
+
+		private interface Converter {
+			byte[] convert(byte[] value, Context context);
 		}
 
 	}
