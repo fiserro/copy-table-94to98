@@ -14,10 +14,10 @@ public class Statics {
 	public static long startTime = 0;
 	public static long endTime = 0;
 	public static int versions = -1;
-	public static String tableName = "fb_comments";
+	public static String tableName = "instagram_posts";
 	public static String startRow = null;
 	public static String stopRow = null;
-	public static String newTableName = "fb_comments_old";
+	public static String newTableName = "instagram_posts_old";
 	public static String peerAddress = null;
 	public static String zkQuorum = "c-sencha-s01,c-sencha-s02,c-sencha-s03";
 	public static String families = null;
@@ -26,7 +26,7 @@ public class Statics {
 	public static int saltBytes = -1;
 	public static int bucketSize = 30000;
 
-	public static final Path OUPUT_PATH = new Path("hdfs:///migrations/fb_comments/");
+	public static final Path OUPUT_PATH = new Path("hdfs:///migrations/instagram_posts/");
 
 	public static boolean doCommandLine(final String[] args) {
 		// Process command-line args. TODO: Better cmd-line processing
