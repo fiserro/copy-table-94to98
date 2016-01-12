@@ -3,3 +3,5 @@ target
 .project
 dependency-lib/jarjar-1.4.jar
 copy-table.jar
+.idea
+*.iml
