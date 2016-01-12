@@ -4,6 +4,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -12,8 +13,12 @@ import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.lib.output.NullOutputFormat;
 import org.apache.hadoop.util.GenericOptionsParser;
 import org.apache.hadoop.util.Tool;
+import org.apache98.hadoop.hbase.client.HTableUtil;
+import org.apache98.hadoop.hbase.client.Put;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.apache.hadoop.hbase.mapreduce.Statics.*;
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
@@ -21,12 +26,13 @@ import static org.apache.hadoop.hbase.util.Bytes.toBytes;
 public class InaragramPostsCopyTable extends Configured implements Tool {
 
     private static final byte[] D = toBytes("d");
-    private static final byte[] M = toBytes("m");
-    private static final byte[] I = toBytes("i");
 
-    private static final byte[] ID = toBytes("id_orig");
-    private static final byte[] PAGE_ID = toBytes("page_id");
-    private static final byte[] CREATED_TIME = toBytes("created_time");
+    private static final byte[] ID = toBytes("page_id");
+
+    private static final byte[] PROFILE_ID = toBytes("profile_id");
+    private static final byte[] PREV_PROFILE_ID = toBytes("page_id");
+
+    private static final byte[] CREATE_TIME = toBytes("created_time");
 
     @Override
     public int run(String[] args) throws Exception {
@@ -82,13 +88,7 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
             jobName += "-lastRow";
         }
         scan.setCaching(400);
-        scan.addColumn(D, ID);
-        scan.addColumn(D, CREATED_TIME);
-        scan.addColumn(D, PAGE_ID);
-        scan.addColumn(M, ID);
-        scan.addColumn(M, CREATED_TIME);
-        scan.addColumn(M, PAGE_ID);
-        scan.addFamily(I);
+        scan.addFamily(D);
 
         Job job = new Job(conf, jobName);
         job.setJarByClass(CopyTable2.class);
@@ -112,5 +112,66 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
 
     private static class Mapper94_98 extends TableMapper<ImmutableBytesWritable, KeyValue> {
 
+        private List<org.apache98.hadoop.hbase.client.Put> puts = new ArrayList<org.apache98.hadoop.hbase.client.Put>();
+        private org.apache98.hadoop.hbase.client.HTable table;
+
+        @SuppressWarnings("unchecked")
+        @Override
+        protected void map(ImmutableBytesWritable key, Result result, Context context) throws IOException, InterruptedException {
+            try {
+                Put put = mapToNewStructurePut(result);
+                puts.add(put);
+                if (puts.size() >= bucketSize) {
+                    flush(context);
+                }
+            } catch (ValueNotFound e) {
+                context.getCounter("err", "miss_" + e.getField()).increment(1);
+            }
+        }
+
+        private Put mapToNewStructurePut(Result result) throws ValueNotFound {
+            byte[] id = getValue(ID, result);
+            Put put = new Put(id);
+            put(put, PROFILE_ID, getValue(PREV_PROFILE_ID, result));
+            put(put, CREATE_TIME, getValue(CREATE_TIME, result));
+            return put;
+        }
+
+        private void put(Put put, byte[] qualifier, byte[] value) {
+            if (value != null && value.length > 0)
+                put.add(D, qualifier, value);
+        }
+
+        private byte[] getValue(byte[] qualifier, Result result, boolean isRequired) throws ValueNotFound {
+            byte[] data = result.getValue(D, qualifier);
+            if (data == null && isRequired)
+                throw new ValueNotFound(qualifier.toString());
+            return data;
+        }
+
+        private byte[] getValue(byte[] qualifier, Result result) throws ValueNotFound {
+            return getValue(qualifier, result, true);
+        }
+
+        private void flush(Context context) throws IOException {
+            int putSize = puts.size();
+            if (putSize > 0) {
+                HTableUtil.bucketRsPut(table, puts);
+                context.getCounter("hbase98", "flush").increment(1);
+                context.getCounter("hbase98", "put").increment(putSize);
+                puts.clear();
+            }
+        }
+
+
+        class ValueNotFound extends Exception {
+            private String field;
+            public ValueNotFound(String field) {
+                this.field = field;
+            }
+            public String getField() {
+                return field;
+            }
+        }
     }
 }

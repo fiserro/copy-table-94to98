@@ -17,7 +17,7 @@ public class Statics {
 	public static String tableName = "instagram_posts";
 	public static String startRow = null;
 	public static String stopRow = null;
-	public static String newTableName = "instagram_posts_old";
+	public static String newTableName = "ig_posts";
 	public static String peerAddress = null;
 	public static String zkQuorum = "c-sencha-s01,c-sencha-s02,c-sencha-s03";
 	public static String families = null;
