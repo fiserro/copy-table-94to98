@@ -10,9 +10,13 @@ import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.lib.output.NullOutputFormat;
 import org.apache.hadoop.util.GenericOptionsParser;
 import org.apache.hadoop.util.Tool;
+import org.apache98.hadoop.hbase.HBaseConfiguration;
+import org.apache98.hadoop.hbase.client.HConnection;
+import org.apache98.hadoop.hbase.client.HConnectionManager;
 import org.apache98.hadoop.hbase.client.HTableUtil;
 import org.apache98.hadoop.hbase.client.Put;
 
@@ -32,7 +36,36 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
     private static final byte[] PROFILE_ID = toBytes("profile_id");
     private static final byte[] PREV_PROFILE_ID = toBytes("page_id");
 
-    private static final byte[] CREATE_TIME = toBytes("created_time");
+    private static final byte[] CREATED_TIME = toBytes("created_time");
+    private static final byte[] MESSAGE = toBytes("message");
+    private static final byte[] COMMENT_COUNT = toBytes("comment_count");
+    private static final byte[] LIKE_COUNT = toBytes("like_count");
+    private static final byte[] LINK = toBytes("link");
+    private static final byte[] IMAGES = toBytes("images");
+    private static final byte[] VIDEOS = toBytes("videos");
+    private static final byte[] TYPE = toBytes("sbks.type");
+    private static final byte[] TYPE_PREV = toBytes("type");
+    private static final byte[] PROFILES_FANS_COUNT = toBytes("sbks.profile_fans_count");
+    private static final byte[] PROFILES_FANS_COUNT_PREV = toBytes("page_fans");
+    private static final byte[] RATING = toBytes("sbks.er");
+    private static final byte[] RATING_PREV = toBytes("rating");
+    private static final byte[] SBKS_DOWNLOAD = toBytes("sbks.download_time");
+    private static final byte[] SBKS_DOWNLOAD_PREV = toBytes("sbks_download_tms");
+    private static final byte[] POST_ID = toBytes("instagram.post_id");
+    private static final byte[] POST_ID_PREV = toBytes("post_id");
+    private static final byte[] FILTER = toBytes("instagram.filter");
+    private static final byte[] FILTER_PREV = toBytes("filter");
+    private static final byte[] CAPTION_ID = toBytes("instagram.caption_id");
+    private static final byte[] CAPTION_ID_PREV = toBytes("caption_id");
+    private static final byte[] CAPTION_USER_ID = toBytes("instagram.caption_user_id");
+    private static final byte[] CAPTION_USER_ID_PREV = toBytes("caption_user_id");
+    private static final byte[] USERS_IN_PHOTO = toBytes("users_in_photo");
+    private static final byte[] HASHTAGS = toBytes("hashtags");
+    private static final byte[] HASHTAGS_PREV = toBytes("tags");
+
+    private static final byte[] LOCATION_ID = toBytes("location.id");
+    private static final byte[] LOCATION_NAME = toBytes("location.name");
+    private static final byte[] LOCATION_COORDINATES = toBytes("location.coordinates");
 
     @Override
     public int run(String[] args) throws Exception {
@@ -91,7 +124,7 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
         scan.addFamily(D);
 
         Job job = new Job(conf, jobName);
-        job.setJarByClass(CopyTable2.class);
+        job.setJarByClass(InaragramPostsCopyTable.class);
 
         job.setSpeculativeExecution(false);
         TableMapReduceUtil.initTableMapperJob(tableName, scan, Mapper94_98.class, null, null, job, true, RegionSplitTableInputFormat.class);
@@ -114,12 +147,14 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
 
         private List<org.apache98.hadoop.hbase.client.Put> puts = new ArrayList<org.apache98.hadoop.hbase.client.Put>();
         private org.apache98.hadoop.hbase.client.HTable table;
+        private int bucketSize;
 
         @SuppressWarnings("unchecked")
         @Override
         protected void map(ImmutableBytesWritable key, Result result, Context context) throws IOException, InterruptedException {
             try {
-                Put put = mapToNewStructurePut(result);
+                ValuesMapper mapper = new ValuesMapper(context, result);
+                Put put = mapper.mapToNewStructurePut();
                 puts.add(put);
                 if (puts.size() >= bucketSize) {
                     flush(context);
@@ -128,29 +163,18 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
                 context.getCounter("err", "miss_" + e.getField()).increment(1);
             }
         }
-
-        private Put mapToNewStructurePut(Result result) throws ValueNotFound {
-            byte[] id = getValue(ID, result);
-            Put put = new Put(id);
-            put(put, PROFILE_ID, getValue(PREV_PROFILE_ID, result));
-            put(put, CREATE_TIME, getValue(CREATE_TIME, result));
-            return put;
-        }
-
-        private void put(Put put, byte[] qualifier, byte[] value) {
-            if (value != null && value.length > 0)
-                put.add(D, qualifier, value);
-        }
-
-        private byte[] getValue(byte[] qualifier, Result result, boolean isRequired) throws ValueNotFound {
-            byte[] data = result.getValue(D, qualifier);
-            if (data == null && isRequired)
-                throw new ValueNotFound(qualifier.toString());
-            return data;
-        }
-
-        private byte[] getValue(byte[] qualifier, Result result) throws ValueNotFound {
-            return getValue(qualifier, result, true);
+        
+        @Override
+        protected void setup(Mapper.Context context) throws IOException, InterruptedException {
+            super.setup(context);
+            Configuration conf = context.getConfiguration();
+            bucketSize = conf.getInt(BUCKET_SIZE, 4000);
+            org.apache98.hadoop.conf.Configuration conf98 = HBaseConfiguration.create();
+            // conf98.set("hbase.client.write.buffer", "20971520");
+            conf98.set(HBASE_ZOOKEEPER_QUORUM, conf.get(HBASE_ZOOKEEPER_QUORUM2));
+            HConnection connection = HConnectionManager.createConnection(conf98);
+            table = (org.apache98.hadoop.hbase.client.HTable) connection.getTable(conf.get(NEW_TABLE_NAME));
+            table.setAutoFlushTo(false);
         }
 
         private void flush(Context context) throws IOException {
@@ -163,6 +187,69 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
             }
         }
 
+        private class ValuesMapper {
+            private final Context context;
+            private final Result result;
+
+            public ValuesMapper(Context context, Result result) {
+                this.context = context;
+                this.result = result;
+            }
+
+            public Put mapToNewStructurePut() throws ValueNotFound {
+                byte[] id = getValue(ID, true);
+                Put put = new Put(id);
+
+                putAndTrack(put, PROFILE_ID, convert(getValue(PREV_PROFILE_ID), Convertors.longC));
+                putAndTrack(put, CREATED_TIME, convert(getValue(CREATED_TIME), Convertors.dateC));
+                putAndTrack(put, MESSAGE, getValue(MESSAGE));
+                putAndTrack(put, COMMENT_COUNT, convert(getValue(COMMENT_COUNT), Convertors.integerC));
+                putAndTrack(put, LIKE_COUNT, convert(getValue(LIKE_COUNT), Convertors.integerC));
+                putAndTrack(put, LINK, getValue(LINK));
+                putAndTrack(put, IMAGES, getValue(IMAGES));
+                putAndTrack(put, VIDEOS, getValue(VIDEOS));
+                putAndTrack(put, TYPE, getValue(TYPE_PREV));
+                putAndTrack(put, PROFILES_FANS_COUNT, convert(getValue(PROFILES_FANS_COUNT_PREV), Convertors.integerC));
+                putAndTrack(put, RATING, convert(getValue(RATING_PREV), Convertors.doubleC));
+                putAndTrack(put, SBKS_DOWNLOAD, convert(getValue(SBKS_DOWNLOAD_PREV), Convertors.dateC));
+                putAndTrack(put, POST_ID, convert(getValue(POST_ID_PREV), Convertors.longC));
+                putAndTrack(put, FILTER, getValue(FILTER_PREV));
+                putAndTrack(put, CAPTION_ID, getValue(CAPTION_ID_PREV));
+                putAndTrack(put, CAPTION_USER_ID, getValue(CAPTION_USER_ID_PREV));
+                putAndTrack(put, USERS_IN_PHOTO, getValue(USERS_IN_PHOTO));
+                putAndTrack(put, HASHTAGS, getValue(HASHTAGS_PREV));
+                putAndTrack(put, LOCATION_ID, getValue(LOCATION_ID));
+                putAndTrack(put, LOCATION_NAME, getValue(LOCATION_NAME));
+                putAndTrack(put, LOCATION_COORDINATES, convert(getValue(LOCATION_COORDINATES), Convertors.doubleArrayC));
+
+                return put;
+            }
+
+            private void putAndTrack(Put put, byte[] qualifier, byte[] value) {
+                if (value != null && value.length > 0)
+                    put.add(D, qualifier, value);
+                else
+                    context.getCounter("err", "empty_field_" + Bytes.toString(qualifier)).increment(1);
+            }
+
+            private byte[] getValue(byte[] qualifier, boolean isRequired) throws ValueNotFound {
+                byte[] data = result.getValue(D, qualifier);
+                if (data == null && isRequired)
+                    throw new ValueNotFound(Bytes.toString(qualifier));
+                return data;
+            }
+
+            private byte[] getValue(byte[] qualifier) throws ValueNotFound {
+                return getValue(qualifier, false);
+            }
+
+            private byte[] convert(byte[] value, Convertors.Converter converter) {
+                if (value != null && value.length > 0)
+                    return converter.convert(value, context);
+                return value;
+            }
+
+        }
 
         class ValueNotFound extends Exception {
             private String field;
@@ -172,6 +259,7 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
             public String getField() {
                 return field;
             }
+
         }
     }
 }
