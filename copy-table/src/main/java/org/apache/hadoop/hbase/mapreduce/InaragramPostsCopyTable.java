@@ -17,7 +17,6 @@ import org.apache.hadoop.util.Tool;
 import org.apache98.hadoop.hbase.HBaseConfiguration;
 import org.apache98.hadoop.hbase.client.HConnection;
 import org.apache98.hadoop.hbase.client.HConnectionManager;
-import org.apache98.hadoop.hbase.client.HTableUtil;
 import org.apache98.hadoop.hbase.client.Put;
 
 import java.io.IOException;
@@ -163,7 +162,7 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
                 context.getCounter("err", "miss_" + e.getField()).increment(1);
             }
         }
-        
+
         @Override
         protected void setup(Mapper.Context context) throws IOException, InterruptedException {
             super.setup(context);
@@ -180,7 +179,7 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
         private void flush(Context context) throws IOException {
             int putSize = puts.size();
             if (putSize > 0) {
-                HTableUtil.bucketRsPut(table, puts);
+//                HTableUtil.bucketRsPut(table, puts);
                 context.getCounter("hbase98", "flush").increment(1);
                 context.getCounter("hbase98", "put").increment(putSize);
                 puts.clear();
