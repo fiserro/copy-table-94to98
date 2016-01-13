@@ -199,19 +199,19 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
                 byte[] id = getValue(ID, true);
                 Put put = new Put(id);
 
-                putAndTrack(put, PROFILE_ID, convert(getValue(PREV_PROFILE_ID), Convertors.longC));
-                putAndTrack(put, CREATED_TIME, convert(getValue(CREATED_TIME), Convertors.dateC));
+                putAndTrack(put, PROFILE_ID, convert(getValue(PREV_PROFILE_ID), Converters.longC));
+                putAndTrack(put, CREATED_TIME, convert(getValue(CREATED_TIME), Converters.dateC));
                 putAndTrack(put, MESSAGE, getValue(MESSAGE));
-                putAndTrack(put, COMMENT_COUNT, convert(getValue(COMMENT_COUNT), Convertors.integerC));
-                putAndTrack(put, LIKE_COUNT, convert(getValue(LIKE_COUNT), Convertors.integerC));
+                putAndTrack(put, COMMENT_COUNT, convert(getValue(COMMENT_COUNT), Converters.integerC));
+                putAndTrack(put, LIKE_COUNT, convert(getValue(LIKE_COUNT), Converters.integerC));
                 putAndTrack(put, LINK, getValue(LINK));
                 putAndTrack(put, IMAGES, getValue(IMAGES));
                 putAndTrack(put, VIDEOS, getValue(VIDEOS));
                 putAndTrack(put, TYPE, getValue(TYPE_PREV));
-                putAndTrack(put, PROFILES_FANS_COUNT, convert(getValue(PROFILES_FANS_COUNT_PREV), Convertors.integerC));
-                putAndTrack(put, RATING, convert(getValue(RATING_PREV), Convertors.doubleC));
-                putAndTrack(put, SBKS_DOWNLOAD, convert(getValue(SBKS_DOWNLOAD_PREV), Convertors.dateC));
-                putAndTrack(put, POST_ID, convert(getValue(POST_ID_PREV), Convertors.longC));
+                putAndTrack(put, PROFILES_FANS_COUNT, convert(getValue(PROFILES_FANS_COUNT_PREV), Converters.integerC));
+                putAndTrack(put, RATING, convert(getValue(RATING_PREV), Converters.doubleC));
+                putAndTrack(put, SBKS_DOWNLOAD, convert(getValue(SBKS_DOWNLOAD_PREV), Converters.dateC));
+                putAndTrack(put, POST_ID, convert(getValue(POST_ID_PREV), Converters.longC));
                 putAndTrack(put, FILTER, getValue(FILTER_PREV));
                 putAndTrack(put, CAPTION_ID, getValue(CAPTION_ID_PREV));
                 putAndTrack(put, CAPTION_USER_ID, getValue(CAPTION_USER_ID_PREV));
@@ -219,7 +219,7 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
                 putAndTrack(put, HASHTAGS, getValue(HASHTAGS_PREV));
                 putAndTrack(put, LOCATION_ID, getValue(LOCATION_ID));
                 putAndTrack(put, LOCATION_NAME, getValue(LOCATION_NAME));
-                putAndTrack(put, LOCATION_COORDINATES, convert(getValue(LOCATION_COORDINATES), Convertors.doubleArrayC));
+                putAndTrack(put, LOCATION_COORDINATES, convert(getValue(LOCATION_COORDINATES), Converters.doubleArrayC));
 
                 return put;
             }
@@ -242,7 +242,7 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
                 return getValue(qualifier, false);
             }
 
-            private byte[] convert(byte[] value, Convertors.Converter converter) {
+            private byte[] convert(byte[] value, Converters.Converter converter) {
                 if (value != null && value.length > 0)
                     return converter.convert(value, context);
                 return value;

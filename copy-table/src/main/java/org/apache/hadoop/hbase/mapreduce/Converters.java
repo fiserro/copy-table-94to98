@@ -11,7 +11,7 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
-public class Convertors {
+public class Converters {
 
     private static ObjectMapper mapper = new ObjectMapper();
 
