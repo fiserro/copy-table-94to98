@@ -14,7 +14,7 @@ public class Statics {
 	public static long startTime = 0;
 	public static long endTime = 0;
 	public static int versions = -1;
-	public static String tableName = "fb_comments";
+	public static String tableName = "fb_posts_metric_evolution";
 	public static String startRow = null;
 	public static String stopRow = null;
 	public static String newTableName = "fb_comments_old";
