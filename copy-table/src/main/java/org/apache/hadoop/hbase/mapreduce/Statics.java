@@ -17,7 +17,7 @@ public class Statics {
 	public static String tableName = "fb_posts_metric_evolution";
 	public static String startRow = null;
 	public static String stopRow = null;
-	public static String newTableName = "fb_comments_old";
+	// public static String newTableName = "fb_comments_old";
 	public static String peerAddress = null;
 	public static String zkQuorum = "c-sencha-s01,c-sencha-s02,c-sencha-s03";
 	public static String families = null;
@@ -73,11 +73,11 @@ public class Statics {
 					continue;
 				}
 
-				final String newNameArgKey = "--new.name=";
-				if (cmd.startsWith(newNameArgKey)) {
-					newTableName = cmd.substring(newNameArgKey.length());
-					continue;
-				}
+				// final String newNameArgKey = "--new.name=";
+				// if (cmd.startsWith(newNameArgKey)) {
+				// newTableName = cmd.substring(newNameArgKey.length());
+				// continue;
+				// }
 
 				final String peerAdrArgKey = "--peer.adr=";
 				if (cmd.startsWith(peerAdrArgKey)) {
@@ -130,11 +130,11 @@ public class Statics {
 					// return false;
 				}
 			}
-			if (newTableName == null && peerAddress == null) {
-				printUsage("At least a new table name or a " +
-						"peer address must be specified");
-				return false;
-			}
+			// if (newTableName == null && peerAddress == null) {
+			// printUsage("At least a new table name or a " +
+			// "peer address must be specified");
+			// return false;
+			// }
 			if (startTime > endTime) {
 				printUsage("Invalid time range filter: starttime=" + startTime + " >  endtime=" + endTime);
 				return false;

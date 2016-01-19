@@ -3,7 +3,6 @@ package org.apache.hadoop.hbase.mapreduce;
 import static org.apache.hadoop.hbase.mapreduce.Statics.*;
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
 import static org.apache.hadoop.hbase.util.Bytes.toBytesBinary;
-import static org.apache.hadoop.hbase.util.Bytes.toStringBinary;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -93,6 +92,7 @@ public class CopyTable2 extends Configured implements Tool {
 			jobName += "-lastRow";
 		}
 		scan.setCaching(400);
+		scan.setBatch(10000);
 		scan.addFamily(E);
 
 		Job job = new Job(conf, jobName);
@@ -106,7 +106,7 @@ public class CopyTable2 extends Configured implements Tool {
 
 		JobConf jobConf = (JobConf) job.getConfiguration();
 
-		jobConf.set(NEW_TABLE_NAME, newTableName);
+		// jobConf.set(NEW_TABLE_NAME, newTableName);
 		jobConf.set(HBASE_ZOOKEEPER_QUORUM2, zkQuorum);
 		jobConf.setInt(RegionSplitTableInputFormat.REGION_SPLIT, regionSplit);
 		jobConf.setInt(SALT_BYTES, saltBytes);
@@ -147,6 +147,9 @@ public class CopyTable2 extends Configured implements Tool {
 
 	private static class Mapper94_98 extends TableMapper<ImmutableBytesWritable, KeyValue> {
 
+		private static final byte[] COMMENT_COUNT = toBytes("COMMENT_COUNT");
+		private static final byte[] LIKE_COUNT = toBytes("LIKE_COUNT");
+		private static final byte[] SHARE_COUNT = toBytes("SHARE_COUNT");
 		private static final byte[] PROFILE_ID = toBytes("profile_id");
 		private static final String FB_PAGE_POST_INSIGHTS_EVOLUTION = "FB_PAGE_POST_INSIGHTS_EVOLUTION";
 		private static final String FB_POST_INSIGHTS_EVOLUTION = "FB_POST_INSIGHTS_EVOLUTION";
@@ -172,7 +175,7 @@ public class CopyTable2 extends Configured implements Tool {
 			FakeContext context = mapper94_98.createFakeContext(conf);
 			mapper94_98.setup(context);
 			for (Result result : scanner) {
-				if (++i > 1) {
+				if (++i > 3) {
 					break;
 				}
 				mapper94_98.map(new ImmutableBytesWritable(result.getRow()), result, context);
@@ -190,7 +193,9 @@ public class CopyTable2 extends Configured implements Tool {
 			return pageId + _ + postId;
 		}
 
-		private Map<String, String> metrics = new HashMap<String, String>() {
+		private Map<byte[], String> metricNames = new TreeMap<byte[], String>(Bytes.BYTES_COMPARATOR);
+
+		private Map<byte[], byte[]> metrics = new TreeMap<byte[], byte[]>(Bytes.BYTES_COMPARATOR) {
 			{
 				put("1", "STORIES");
 				put("2", "STORYTELLERS");
@@ -294,6 +299,12 @@ public class CopyTable2 extends Configured implements Tool {
 				// put("", "video_retention_graph_autoplayed");
 				// put("", "video_retention_graph_clicked_to_play");
 			}
+
+			void put(String key, String value) {
+				byte[] bytes = toBytes(value);
+				put(toBytes(key), bytes);
+				metricNames.put(bytes, value);
+			}
 		};
 
 		int bucketSize = 20000;
@@ -342,12 +353,14 @@ public class CopyTable2 extends Configured implements Tool {
 			}
 		};
 
-		private Map<String, Converter> converters = new HashMap<String, CopyTable2.Mapper94_98.Converter>() {
+		private Map<byte[], Converter> converters = new HashMap<byte[], CopyTable2.Mapper94_98.Converter>() {
 			{
-				put("VIDEO_AVG_TIME_WATCHED", floatC);
-				put("VIDEO_RETENTION_GRAPH", doubleArrayC);
+				put(toBytes("VIDEO_AVG_TIME_WATCHED"), floatC);
+				put(toBytes("VIDEO_RETENTION_GRAPH"), doubleArrayC);
 			}
 		};
+
+		private int cellCounter = 0;
 
 		@Override
 		protected void cleanup(Context context) throws IOException, InterruptedException {
@@ -373,31 +386,32 @@ public class CopyTable2 extends Configured implements Tool {
 			if (familyMap == null) {
 				return;
 			}
-			Map<Integer, Map<String, Object>> data = new TreeMap<Integer, Map<String, Object>>();
+			Map<Integer, Map<byte[], Object>> data = new TreeMap<Integer, Map<byte[], Object>>();
 			for (Entry<byte[], byte[]> entry : familyMap.entrySet()) {
 				byte[] column = entry.getKey();
 				if (column.length <= 5) {
-					System.out.println(toStringBinary(column) + ":" + toStringBinary(entry.getValue()));
+					// System.out.println(toStringBinary(column) + ":" + toStringBinary(entry.getValue()));
 					continue;
 				}
-				String metric = Bytes.toString(column, 0, column.length - 5);
+				byte[] metric = new byte[column.length - 5];
+				System.arraycopy(column, 0, metric, 0, metric.length);
 				int tms = Bytes.toInt(column, column.length - 4);
-				Map<String, Object> tmsData = data.get(tms);
+				Map<byte[], Object> tmsData = data.get(tms);
 				if (tmsData == null) {
-					tmsData = new HashMap<String, Object>();
+					tmsData = new TreeMap<byte[], Object>(Bytes.BYTES_COMPARATOR);
 					data.put(tms, tmsData);
 				}
 				tmsData.put(metric, entry.getValue());
 			}
 
-			for (Entry<Integer, Map<String, Object>> entry : data.entrySet()) {
-				Map<String, Object> row = entry.getValue();
-				Set<String> keySet = new HashSet<String>(row.keySet());
-				for (String sourceMetric : keySet) {
+			for (Entry<Integer, Map<byte[], Object>> entry : data.entrySet()) {
+				Map<byte[], Object> row = entry.getValue();
+				Set<byte[]> keySet = new HashSet<byte[]>(row.keySet());
+				for (byte[] sourceMetric : keySet) {
 					byte[] bytes = (byte[]) row.remove(sourceMetric);
-					String targetMetric = metrics.get(sourceMetric);
+					byte[] targetMetric = metrics.get(sourceMetric);
 					if (targetMetric == null) {
-						System.out.println("missing metric: " + sourceMetric);
+						System.out.println("missing metric: " + Bytes.toString(sourceMetric));
 						continue;
 					}
 					Converter converter = converters.get(targetMetric);
@@ -407,8 +421,8 @@ public class CopyTable2 extends Configured implements Tool {
 					Object value = converter.convert(bytes, context);
 					if (value != null) {
 						row.put(targetMetric, value);
-						context.getCounter("mapped", targetMetric).increment(1);
 					}
+					cellCounter++;
 				}
 			}
 
@@ -423,7 +437,7 @@ public class CopyTable2 extends Configured implements Tool {
 
 			byte[] postRow = preparePostRow(postId);
 			byte[] pageRow = preparePageRow(pageId, postId);
-			for (Entry<Integer, Map<String, Object>> entry : data.entrySet()) {
+			for (Entry<Integer, Map<byte[], Object>> entry : data.entrySet()) {
 				Date date = new Date((long) entry.getKey() * 1000);
 				updateTime(date, postRow, postId.length + 1);
 				updateTime(date, pageRow, pageId.length + 1);
@@ -431,8 +445,8 @@ public class CopyTable2 extends Configured implements Tool {
 				Put pagePut = new Put(pageRow);
 				Put postInsPut = new Put(postRow);
 				Put pageInsPut = new Put(pageRow);
-				for (Entry<String, Object> entry2 : entry.getValue().entrySet()) {
-					String metric = entry2.getKey();
+				for (Entry<byte[], Object> entry2 : entry.getValue().entrySet()) {
+					byte[] metric = entry2.getKey();
 					byte[] value;
 					if (entry2.getValue() instanceof Integer) {
 						value = PDataType.INTEGER.toBytes(entry2.getValue());
@@ -445,12 +459,15 @@ public class CopyTable2 extends Configured implements Tool {
 					} else {
 						continue;
 					}
-					if (metric.matches("SHARE_COUNT|LIKE_COUNT|COMMENT_COUNT")) {
-						postPut.add(_0, toBytes(entry2.getKey()), value);
-						pagePut.add(_0, toBytes(entry2.getKey()), value);
+					if (Bytes.equals(metric, SHARE_COUNT) || Bytes.equals(metric, LIKE_COUNT)
+							|| Bytes.equals(metric, COMMENT_COUNT)) {
+						context.getCounter("mapped1", metricNames.get(metric)).increment(1);
+						postPut.add(_0, metric, value);
+						pagePut.add(_0, metric, value);
 					} else {
-						postInsPut.add(_0, toBytes(entry2.getKey()), value);
-						pageInsPut.add(_0, toBytes(entry2.getKey()), value);
+						context.getCounter("mapped2", metricNames.get(metric)).increment(1);
+						postInsPut.add(_0, metric, value);
+						pageInsPut.add(_0, metric, value);
 					}
 				}
 				if (!postPut.isEmpty()) {
@@ -606,9 +623,9 @@ public class CopyTable2 extends Configured implements Tool {
 		}
 
 		private void flushAll(Context context, boolean force) throws IOException {
-			for (String tableName : TABLE_NAMES) {
-				Collection<Put> putList = puts.get(tableName);
-				if (force || putList.size() >= bucketSize) {
+			if (force || cellCounter >= bucketSize) {
+				for (String tableName : TABLE_NAMES) {
+					Collection<Put> putList = puts.get(tableName);
 					if (putList instanceof List) {
 						flush(context, tableName, (List<Put>) putList);
 					} else {
@@ -616,6 +633,7 @@ public class CopyTable2 extends Configured implements Tool {
 					}
 					puts.removeAll(tableName);
 				}
+				cellCounter = 0;
 			}
 		}
 
