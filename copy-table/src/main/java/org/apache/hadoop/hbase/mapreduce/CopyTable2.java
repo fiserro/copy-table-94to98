@@ -14,13 +14,14 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.mapred.JobConf;
-import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.*;
 import org.apache.hadoop.mapreduce.lib.output.NullOutputFormat;
 import org.apache.hadoop.util.GenericOptionsParser;
 import org.apache.hadoop.util.Tool;
@@ -35,9 +36,9 @@ import org.apache98.hadoop.hbase.client.HConnectionManager;
 import org.apache98.hadoop.hbase.client.HTableUtil;
 import org.apache98.hadoop.hbase.client.Put;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
+import com.socialbakers.proto.ProtobufGeneral.ArrayOfDoubles;
 
 /**
  * Tool used to copy a table to another one which can be on a different setup.
@@ -151,14 +152,36 @@ public class CopyTable2 extends Configured implements Tool {
 		private static final String FB_POST_INSIGHTS_EVOLUTION = "FB_POST_INSIGHTS_EVOLUTION";
 		private static final String FB_PAGE_POST_EVOLUTION = "FB_PAGE_POST_EVOLUTION";
 		private static final String FB_POST_EVOLUTION = "FB_POST_EVOLUTION";
+		private static final String[] TABLE_NAMES = new String[] { FB_POST_EVOLUTION, FB_PAGE_POST_EVOLUTION, FB_POST_INSIGHTS_EVOLUTION,
+				FB_PAGE_POST_INSIGHTS_EVOLUTION };
 		private static final byte[] _0 = toBytes("0");
 		private static final String _ = "_";
-		private static final String DOT = ".";
-		private static final byte[] DOT_BYTES = toBytes(DOT);
 
-		public static void main(String[] args) {
-			System.out
-					.println(rowkeyToString(toBytesBinary("00_\\x00\\x00\\x00\\x01\\x98\\xE8\\x12\\xD4_\\x7F\\xDB\\xEDS\\xDF\\x06\\xFER")));
+		public static void main(String[] args) throws IOException, InterruptedException {
+
+			Mapper94_98 mapper94_98 = new Mapper94_98();
+			Configuration conf = org.apache.hadoop.hbase.HBaseConfiguration.create();
+			conf.set(HBASE_ZOOKEEPER_QUORUM, "zookeeper1");
+			conf.set(HBASE_ZOOKEEPER_QUORUM2, "c-sencha-s01");
+			Scan scan = new Scan(toBytesBinary("00_\\x00\\x00\\x00\\x01\\x98\\xE8\\x12\\xD4_\\x7F\\xDB\\xEDU\\x823\\xA5\\xF3"));
+			scan.setCaching(10);
+			HTable htable = new HTable(conf, "fb_posts_metric_evolution");
+			ResultScanner scanner = htable.getScanner(scan);
+			int i = 0;
+
+			FakeContext context = mapper94_98.createFakeContext(conf);
+			mapper94_98.setup(context);
+			for (Result result : scanner) {
+				if (++i > 1) {
+					break;
+				}
+				mapper94_98.map(new ImmutableBytesWritable(result.getRow()), result, context);
+			}
+			mapper94_98.cleanup(context);
+			for (Counter counter : context.getCounters().values()) {
+				System.out.println(counter.getDisplayName() + ":" + counter.getValue());
+			}
+			htable.close();
 		}
 
 		private static String rowkeyToString(byte[] rowkey) {
@@ -167,7 +190,113 @@ public class CopyTable2 extends Configured implements Tool {
 			return pageId + _ + postId;
 		}
 
-		int bucketSize = 30000;
+		private Map<String, String> metrics = new HashMap<String, String>() {
+			{
+				put("1", "STORIES");
+				put("2", "STORYTELLERS");
+				put("3.like", "STORIES_BY_ACTION_TYPE_LIKE");
+				put("3.comment", "STORIES_BY_ACTION_TYPE_COMMENT");
+				put("3.share", "STORIES_BY_ACTION_TYPE_SHARE");
+				put("4.like", "STORYTELLERS_BY_ACTION_TYPE_LIKE");
+				put("4.comment", "STORYTELLERS_BY_ACTION_TYPE_COMMENT");
+				put("4.share", "STORYTELLERS_BY_ACTION_TYPE_SHARE");
+				put("5.like", "STORY_ADDS_BY_ACTION_TYPE_UNIQUE_LIKE");
+				put("5.comment", "STORY_ADDS_BY_ACTION_TYPE_UNIQUE_COMMENT");
+				put("5.share", "STORY_ADDS_BY_ACTION_TYPE_UNIQUE_SHARE");
+				put("6", "STORY_ADDS_UNIQUE");
+				put("7", "STORY_ADDS");
+				put("8", "IMPRESSIONS");
+				put("9", "IMPRESSIONS_UNIQUE");
+				put("10", "IMPRESSIONS_PAID");
+				put("11", "IMPRESSIONS_PAID_UNIQUE");
+				put("12", "IMPRESSIONS_FAN");
+				put("13", "IMPRESSIONS_FAN_UNIQUE");
+				put("14", "IMPRESSIONS_FAN_PAID");
+				put("15", "IMPRESSIONS_FAN_PAID_UNIQUE");
+				put("16", "IMPRESSIONS_ORGANIC");
+				put("17", "IMPRESSIONS_ORGANIC_UNIQUE");
+				put("18", "IMPRESSIONS_VIRAL");
+				put("19", "IMPRESSIONS_VIRAL_UNIQUE");
+				put("20.coupon", "IMPRESSIONS_BY_STORY_TYPE_COUPON");
+				put("20.fan", "IMPRESSIONS_BY_STORY_TYPE_FAN");
+				put("20.mention", "IMPRESSIONS_BY_STORY_TYPE_MENTION");
+				put("20.other", "IMPRESSIONS_BY_STORY_TYPE_OTHER");
+				put("20.question", "IMPRESSIONS_BY_STORY_TYPE_QUESTION");
+				put("20.user_post", "IMPRESSIONS_BY_STORY_TYPE_USER_POST");
+				put("20.page_post", "IMPRESSIONS_BY_STORY_TYPE_PAGE_POST");
+				put("20.page_subscribe", "IMPRESSIONS_BY_STORY_TYPE_PAGE_SUBSCRIBE");
+				put("21.coupon", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_COUPON");
+				put("21.fan", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_FAN");
+				put("21.mention", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_MENTION");
+				put("21.other", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_OTHER");
+				put("21.question", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_QUESTION");
+				put("21.user_post", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_USER_POST");
+				put("21.page_post", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_PAGE_POST");
+				put("21.page_subscribe", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_PAGE_SUBSCRIBE");
+				put("22.paid", "IMPRESSIONS_BY_PAID_NON_PAID_PAID");
+				put("22.unpaid", "IMPRESSIONS_BY_PAID_NON_PAID_UNPAID");
+				put("22.total", "IMPRESSIONS_BY_PAID_NON_PAID_TOTAL");
+				put("23.paid", "IMPRESSIONS_BY_PAID_NON_PAID_UNIQUE_PAID");
+				put("23.unpaid", "IMPRESSIONS_BY_PAID_NON_PAID_UNIQUE_UNPAID");
+				put("23.total", "IMPRESSIONS_BY_PAID_NON_PAID_UNIQUE_TOTAL");
+				put("24", "CONSUMPTIONS");
+				put("25", "CONSUMPTIONS_UNIQUE");
+				put("26.other clicks", "CONSUMPTIONS_BY_TYPE_OTHER_CLICKS");
+				put("26.photo view", "CONSUMPTIONS_BY_TYPE_PHOTO_VIEW");
+				put("26.video play", "CONSUMPTIONS_BY_TYPE_VIDEO_PLAY");
+				put("26.link clicks", "CONSUMPTIONS_BY_LINK_CLICKS");
+				put("27.other clicks", "CONSUMPTIONS_BY_TYPE_UNIQUE_OTHER_CLICKS");
+				put("27.photo view", "CONSUMPTIONS_BY_TYPE_UNIQUE_PHOTO_VIEW");
+				put("27.video play", "CONSUMPTIONS_BY_TYPE_UNIQUE_VIDEO_PLAY");
+				put("27.link clicks", "CONSUMPTIONS_BY_TYPE_UNIQUE_LINK_CLICKS");
+				put("28", "ENGAGED_USERS");
+				put("29", "NEGATIVE_FEEDBACK");
+				put("30", "NEGATIVE_FEEDBACK_UNIQUE");
+				put("31.hide_all_clicks", "NEGATIVE_FEEDBACK_BY_TYPE_HIDE_ALL_CLICKS");
+				put("31.hide_clicks", "NEGATIVE_FEEDBACK_BY_TYPE_HIDE_CLICKS");
+				put("31.report_spam_clicks", "NEGATIVE_FEEDBACK_BY_TYPE_REPORT_SPAM_CLICKS");
+				put("31.unlike_page_clicks", "NEGATIVE_FEEDBACK_BY_TYPE_UNLIKE_PAGE_CLICKS");
+				put("31.xbutton_clicks", "NEGATIVE_FEEDBACK_BY_TYPE_XBUTTON_CLICKS");
+				put("32.hide_all_clicks", "NEGATIVE_FEEDBACK_BY_TYPE_UNIQUE_HIDE_ALL_CLICKS");
+				put("32.hide_clicks", "NEGATIVE_FEEDBACK_BY_TYPE_UNIQUE_HIDE_CLICKS");
+				put("32.report_spam_clicks", "NEGATIVE_FEEDBACK_BY_TYPE_UNIQUE_REPORT_SPAM_CLICKS");
+				put("32.unlike_page_clicks", "NEGATIVE_FEEDBACK_BY_TYPE_UNIQUE_UNLIKE_PAGE_CLICKS");
+				put("32.xbutton_clicks", "NEGATIVE_FEEDBACK_BY_TYPE_UNIQUE_XBUTTON_CLICKS");
+				put("33", "VIDEO_AVG_TIME_WATCHED");
+				put("34", "VIDEO_COMPLETE_VIEWS_ORGANIC");
+				put("35", "VIDEO_COMPLETE_VIEWS_ORGANIC_UNIQUE");
+				put("36", "VIDEO_COMPLETE_VIEWS_PAID");
+				put("37", "VIDEO_COMPLETE_VIEWS_PAID_UNIQUE");
+				put("38", "VIDEO_VIEWS_ORGANIC");
+				put("39", "VIDEO_VIEWS_ORGANIC_UNIQUE");
+				put("40", "VIDEO_VIEWS_PAID");
+				put("41", "VIDEO_VIEWS_PAID_UNIQUE");
+				put("48", "SHARE_COUNT");
+				put("49", "LIKE_COUNT");
+				put("50", "COMMENT_COUNT");
+				put("51.like", "STORY_ADDS_BY_ACTION_TYPE_LIKE");
+				put("51.comment", "STORY_ADDS_BY_ACTION_TYPE_COMMENT");
+				put("51.share", "STORY_ADDS_BY_ACTION_TYPE_SHARE");
+				put("52", "VIDEO_RETENTION_GRAPH");
+				// put("", "fan_reach");
+				// put("", "engaged_fan");
+				// put("", "video_length");
+				// put("", "video_views");
+				// put("", "video_views_unique");
+				// put("", "video_views_autoplayed");
+				// put("", "video_views_clicked_to_play");
+				// put("", "video_complete_views_30s");
+				// put("", "video_complete_views_30s_paid");
+				// put("", "video_complete_views_30s_organic");
+				// put("", "video_complete_views_30s_unique");
+				// put("", "video_complete_views_30s_autoplayed");
+				// put("", "video_complete_views_30s_clicked_to_play");
+				// put("", "video_retention_graph_autoplayed");
+				// put("", "video_retention_graph_clicked_to_play");
+			}
+		};
+
+		int bucketSize = 20000;
 
 		private Multimap<String, Put> puts = ArrayListMultimap.create();
 
@@ -175,9 +304,9 @@ public class CopyTable2 extends Configured implements Tool {
 
 		private Converter integerC = new Converter() {
 			@Override
-			public byte[] convert(byte[] value, Context context) {
+			public Object doConvert(byte[] value, Context context) {
 				try {
-					return PDataType.INTEGER.toBytes(Integer.valueOf(Bytes.toString(value)));
+					return Bytes.toInt(value);
 				} catch (Exception e) {
 					e.printStackTrace();
 					context.getCounter("err", "converter.integer.err").increment(1);
@@ -188,11 +317,9 @@ public class CopyTable2 extends Configured implements Tool {
 
 		private Converter floatC = new Converter() {
 			@Override
-			public byte[] convert(byte[] value, Context context) {
+			public Object doConvert(byte[] value, Context context) {
 				try {
-					String string = Bytes.toString(value);
-					string = string.replaceAll("\"", "");
-					return PDataType.FLOAT.toBytes(Integer.valueOf(string));
+					return (float) Bytes.toInt(value);
 				} catch (Exception e) {
 					e.printStackTrace();
 					context.getCounter("err", "converter.float.err").increment(1);
@@ -203,26 +330,11 @@ public class CopyTable2 extends Configured implements Tool {
 
 		private Converter doubleArrayC = new Converter() {
 			@Override
-			public byte[] convert(byte[] value, Context context) {
-				String string = Bytes.toString(value);
+			public Object doConvert(byte[] value, Context context) {
 				try {
-					List<Double> doubles = new ArrayList<Double>();
-					if (string.startsWith("[")) {
-						string = string.replaceFirst("\\[", "").replaceFirst("\\]", "");
-						for (String dStr : string.split(",")) {
-							doubles.add(Double.valueOf(dStr.trim()));
-						}
-					} else if (string.startsWith("{")) {
-						NavigableMap<Integer, Double> sortedMap = new TreeMap<Integer, Double>();
-						for (Entry<String, Object> entry : ((Map<String, Object>) mapper.readValue(string, Map.class)).entrySet()) {
-							sortedMap.put(Integer.valueOf(entry.getKey()), Double.valueOf(entry.getValue().toString()));
-						}
-						doubles.addAll(sortedMap.values());
-					}
-					PhoenixArray phoenixArray = PArrayDataType.instantiatePhoenixArray(PDataType.DOUBLE, doubles.toArray());
-					return PDataType.DOUBLE_ARRAY.toBytes(phoenixArray);
+					return ArrayOfDoubles.parseFrom(value).getDataList();
 				} catch (Exception e) {
-					System.err.println("double_array_err:" + string);
+					System.err.println("double_array_err:" + Bytes.toStringBinary(value));
 					e.printStackTrace();
 					context.getCounter("err", "converter.double_array.err").increment(1);
 					return null;
@@ -230,22 +342,22 @@ public class CopyTable2 extends Configured implements Tool {
 			}
 		};
 
-		private ObjectMapper mapper = new ObjectMapper();
-
-		private Map<byte[], Map<String, Pair<byte[], String>>> nestedQualifiers = new TreeMap<byte[], Map<String, Pair<byte[], String>>>(
-				Bytes.BYTES_COMPARATOR);
+		private Map<String, Converter> converters = new HashMap<String, CopyTable2.Mapper94_98.Converter>() {
+			{
+				put("VIDEO_AVG_TIME_WATCHED", floatC);
+				put("VIDEO_RETENTION_GRAPH", doubleArrayC);
+			}
+		};
 
 		@Override
 		protected void cleanup(Context context) throws IOException, InterruptedException {
 			super.cleanup(context);
-			for (Entry<String, Collection<Put>> entry : puts.asMap().entrySet()) {
-				Collection<Put> putList = entry.getValue();
-				if (putList instanceof List) {
-					flush(context, entry.getKey(), (List<Put>) putList);
-				} else {
-					flush(context, entry.getKey(), new ArrayList<Put>(putList));
+			flushAll(context, true);
+			for (org.apache98.hadoop.hbase.client.HTable table : tables.values()) {
+				try {
+					table.close();
+				} catch (Exception e) {
 				}
-				putList.clear();
 			}
 		}
 
@@ -254,37 +366,65 @@ public class CopyTable2 extends Configured implements Tool {
 		protected void map(ImmutableBytesWritable key, Result result, Context context) throws IOException, InterruptedException {
 
 			byte[] rowkey = key.get();
-			String[] stringKey = rowkeyToString(rowkey).split(_);
-			byte[] pageId = toBytes(stringKey[0]);
-			byte[] postId = toBytes(stringKey[1]);
+			String stringRowkey = rowkeyToString(rowkey);
+			byte[] pageId = toBytes(stringRowkey.split(_)[0]);
+			byte[] postId = toBytes(stringRowkey);
 			NavigableMap<byte[], byte[]> familyMap = result.getFamilyMap(E);
 			if (familyMap == null) {
 				return;
 			}
-			Map<Integer, Map<String, Object>> data = new HashMap<Integer, Map<String, Object>>();
+			Map<Integer, Map<String, Object>> data = new TreeMap<Integer, Map<String, Object>>();
 			for (Entry<byte[], byte[]> entry : familyMap.entrySet()) {
-				String[] split = toStringBinary(entry.getKey()).split(_, 2);
-				if (split.length != 2) {
+				byte[] column = entry.getKey();
+				if (column.length <= 5) {
+					System.out.println(toStringBinary(column) + ":" + toStringBinary(entry.getValue()));
 					continue;
 				}
-				int tms = Bytes.toInt(toBytesBinary(split[1]));
+				String metric = Bytes.toString(column, 0, column.length - 5);
+				int tms = Bytes.toInt(column, column.length - 4);
 				Map<String, Object> tmsData = data.get(tms);
 				if (tmsData == null) {
 					tmsData = new HashMap<String, Object>();
 					data.put(tms, tmsData);
 				}
-				String metric = split[0];
 				tmsData.put(metric, entry.getValue());
 			}
 
 			for (Entry<Integer, Map<String, Object>> entry : data.entrySet()) {
-
+				Map<String, Object> row = entry.getValue();
+				Set<String> keySet = new HashSet<String>(row.keySet());
+				for (String sourceMetric : keySet) {
+					byte[] bytes = (byte[]) row.remove(sourceMetric);
+					String targetMetric = metrics.get(sourceMetric);
+					if (targetMetric == null) {
+						System.out.println("missing metric: " + sourceMetric);
+						continue;
+					}
+					Converter converter = converters.get(targetMetric);
+					if (converter == null) {
+						converter = integerC;
+					}
+					Object value = converter.convert(bytes, context);
+					if (value != null) {
+						row.put(targetMetric, value);
+						context.getCounter("mapped", targetMetric).increment(1);
+					}
+				}
 			}
+
+			// for (Entry<Integer, Map<String, Object>> entry : data.entrySet()) {
+			// System.out.println(rowkeyToString(rowkey) + ":" + new Date((long) entry.getKey() * 1000) + " : " +
+			// entry.getValue());
+			// }
+			//
+			// if (true) {
+			// return;
+			// }
 
 			byte[] postRow = preparePostRow(postId);
 			byte[] pageRow = preparePageRow(pageId, postId);
 			for (Entry<Integer, Map<String, Object>> entry : data.entrySet()) {
-				Date date = new Date(entry.getKey());
+				Date date = new Date((long) entry.getKey() * 1000);
 				updateTime(date, postRow, postId.length + 1);
 				updateTime(date, pageRow, pageId.length + 1);
 				Put postPut = new Put(postRow);
@@ -305,7 +445,7 @@ public class CopyTable2 extends Configured implements Tool {
 					} else {
 						continue;
 					}
-					if (metric.matches("shares|likes|comments")) {
+					if (metric.matches("SHARE_COUNT|LIKE_COUNT|COMMENT_COUNT")) {
 						postPut.add(_0, toBytes(entry2.getKey()), value);
 						pagePut.add(_0, toBytes(entry2.getKey()), value);
 					} else {
@@ -328,17 +468,7 @@ public class CopyTable2 extends Configured implements Tool {
 					puts.put(FB_PAGE_POST_INSIGHTS_EVOLUTION, pageInsPut);
 				}
 			}
-			for (Entry<String, Collection<Put>> entry : puts.asMap().entrySet()) {
-				Collection<Put> putList = entry.getValue();
-				if (putList.size() >= bucketSize) {
-					if (putList instanceof List) {
-						flush(context, entry.getKey(), (List<Put>) putList);
-					} else {
-						flush(context, entry.getKey(), new ArrayList<Put>(putList));
-					}
-					putList.clear();
-				}
-			}
+			flushAll(context, false);
 		}
 
 		@Override
@@ -350,41 +480,143 @@ public class CopyTable2 extends Configured implements Tool {
 			// conf98.set("hbase.client.write.buffer", "20971520");
 			conf98.set(HBASE_ZOOKEEPER_QUORUM, conf.get(HBASE_ZOOKEEPER_QUORUM2));
 			HConnection connection = HConnectionManager.createConnection(conf98);
-			for (String tableName : new String[] { FB_POST_EVOLUTION, FB_PAGE_POST_EVOLUTION, FB_POST_INSIGHTS_EVOLUTION,
-					FB_PAGE_POST_INSIGHTS_EVOLUTION }) {
+			for (String tableName : TABLE_NAMES) {
 				org.apache98.hadoop.hbase.client.HTable table = (org.apache98.hadoop.hbase.client.HTable) connection
-						.getTable(conf.get(NEW_TABLE_NAME));
+						.getTable(tableName);
 				table.setAutoFlushTo(false);
 				tables.put(tableName, table);
 			}
+		}
+
+		private FakeContext createFakeContext(Configuration conf) throws IOException, InterruptedException {
+			TaskAttemptID taskid = new TaskAttemptID("", 1, true, 1, 1);
+			RecordReader<ImmutableBytesWritable, Result> reader = new RecordReader<ImmutableBytesWritable, Result>() {
+
+				@Override
+				public void close() throws IOException {
+					// TODO Auto-generated method stub
+
+				}
+
+				@Override
+				public ImmutableBytesWritable getCurrentKey() throws IOException, InterruptedException {
+					// TODO Auto-generated method stub
+					return null;
+				}
+
+				@Override
+				public Result getCurrentValue() throws IOException, InterruptedException {
+					// TODO Auto-generated method stub
+					return null;
+				}
+
+				@Override
+				public float getProgress() throws IOException, InterruptedException {
+					// TODO Auto-generated method stub
+					return 0;
+				}
+
+				@Override
+				public void initialize(InputSplit arg0, TaskAttemptContext arg1) throws IOException, InterruptedException {
+					// TODO Auto-generated method stub
+
+				}
+
+				@Override
+				public boolean nextKeyValue() throws IOException, InterruptedException {
+					// TODO Auto-generated method stub
+					return false;
+				}
+			};
+			RecordWriter<ImmutableBytesWritable, KeyValue> writer = new RecordWriter<ImmutableBytesWritable, KeyValue>() {
+
+				@Override
+				public void close(TaskAttemptContext arg0) throws IOException, InterruptedException {
+				}
+
+				@Override
+				public void write(ImmutableBytesWritable arg0, KeyValue arg1) throws IOException, InterruptedException {
+				}
+			};
+			OutputCommitter committer = new OutputCommitter() {
+
+				@Override
+				public void abortTask(TaskAttemptContext arg0) throws IOException {
+				}
+
+				@Override
+				public void commitTask(TaskAttemptContext arg0) throws IOException {
+				}
+
+				@Override
+				public boolean needsTaskCommit(TaskAttemptContext arg0) throws IOException {
+					return false;
+				}
+
+				@Override
+				public void setupJob(JobContext arg0) throws IOException {
+				}
+
+				@Override
+				public void setupTask(TaskAttemptContext arg0) throws IOException {
+				}
+			};
+			StatusReporter reporter = new StatusReporter() {
+
+				@Override
+				public Counter getCounter(Enum<?> arg0) {
+					return null;
+				}
+
+				@Override
+				public Counter getCounter(String arg0, String arg1) {
+					return null;
+				}
+
+				@Override
+				public void progress() {
+				}
+
+				@Override
+				public void setStatus(String arg0) {
+				}
+			};
+			InputSplit split = new InputSplit() {
+
+				@Override
+				public long getLength() throws IOException, InterruptedException {
+					return 0;
+				}
+
+				@Override
+				public String[] getLocations() throws IOException, InterruptedException {
+					return null;
+				}
+			};
+			return new FakeContext(conf, taskid, reader, writer, committer, reporter, split);
 		}
 
 		private void flush(Context context, String table, List<Put> puts) throws IOException {
 			int putSize = puts.size();
 			if (putSize > 0) {
 				HTableUtil.bucketRsPut(tables.get(table), puts);
-				context.getCounter("hbase98", table + "flush").increment(1);
-				context.getCounter("hbase98", table + "put").increment(putSize);
-				puts.clear();
+				context.getCounter("hbase98", table + "-flush").increment(1);
+				context.getCounter("hbase98", table + "-put").increment(putSize);
 			}
 		}
 
-		private byte[] getQBytes(byte[] qualifier, String sub) {
-			return getQPair(qualifier, sub).getFirst();
-		}
-
-		private Pair<byte[], String> getQPair(byte[] qualifier, String sub) {
-			Map<String, Pair<byte[], String>> subMap = nestedQualifiers.get(qualifier);
-			if (subMap == null) {
-				subMap = new HashMap<String, Pair<byte[], String>>();
-				nestedQualifiers.put(qualifier, subMap);
+		private void flushAll(Context context, boolean force) throws IOException {
+			for (String tableName : TABLE_NAMES) {
+				Collection<Put> putList = puts.get(tableName);
+				if (force || putList.size() >= bucketSize) {
+					if (putList instanceof List) {
+						flush(context, tableName, (List<Put>) putList);
+					} else {
+						flush(context, tableName, new ArrayList<Put>(putList));
+					}
+					puts.removeAll(tableName);
+				}
 			}
-			Pair<byte[], String> pair = subMap.get(sub);
-			if (pair == null) {
-				pair = new Pair<byte[], String>(Bytes.add(qualifier, DOT_BYTES, toBytes(sub)), Bytes.toString(qualifier) + DOT + sub);
-				subMap.put(sub, pair);
-			}
-			return pair;
 		}
 
 		private byte[] preparePageRow(byte[] pageId, byte[] postId) {
@@ -405,11 +637,44 @@ public class CopyTable2 extends Configured implements Tool {
 
 		private void updateTime(Date date, byte[] rowkey, int offset) {
 			PDataType.DATE.toBytes(date, rowkey, offset);
-			SortOrder.invert(rowkey, offset, Bytes.SIZEOF_LONG);
+			SortOrder.invert(rowkey, offset, rowkey, offset, Bytes.SIZEOF_LONG);
 		}
 
-		private interface Converter {
-			byte[] convert(byte[] value, Context context);
+		private abstract class Converter {
+			Object convert(byte[] value, Context context) {
+				if (value == null || value.length == 0) {
+					return null;
+				}
+				return doConvert(value, context);
+			}
+
+			abstract Object doConvert(byte[] value, Context context);
+		}
+
+		private class FakeContext extends Mapper94_98.Context {
+
+			private Map<String, Counter> counters = new TreeMap<String, Counter>();
+
+			public FakeContext(Configuration conf, TaskAttemptID taskid, RecordReader<ImmutableBytesWritable, Result> reader,
+					RecordWriter<ImmutableBytesWritable, KeyValue> writer, OutputCommitter committer, StatusReporter reporter,
+					InputSplit split) throws IOException, InterruptedException {
+				super(conf, taskid, reader, writer, committer, reporter, split);
+			}
+
+			@Override
+			public Counter getCounter(String groupName, String counterName) {
+				String key = groupName + ":" + counterName;
+				Counter counter = counters.get(key);
+				if (counter == null) {
+					counter = CounterFactory.createCounter(groupName, counterName);
+					counters.put(key, counter);
+				}
+				return counter;
+			}
+
+			public Map<String, Counter> getCounters() {
+				return counters;
+			}
 		}
 
 	}
