@@ -40,8 +40,6 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
     private static final byte[] COMMENT_COUNT = toBytes("comment_count");
     private static final byte[] LIKE_COUNT = toBytes("like_count");
     private static final byte[] LINK = toBytes("link");
-    private static final byte[] IMAGES = toBytes("images");
-    private static final byte[] VIDEOS = toBytes("videos");
     private static final byte[] TYPE = toBytes("sbks.type");
     private static final byte[] TYPE_PREV = toBytes("type");
     private static final byte[] PROFILES_FANS_COUNT = toBytes("sbks.profile_fans_count");
@@ -65,6 +63,13 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
     private static final byte[] LOCATION_ID = toBytes("location.id");
     private static final byte[] LOCATION_NAME = toBytes("location.name");
     private static final byte[] LOCATION_COORDINATES = toBytes("location.coordinates");
+
+    private static final byte[] IMAGE_LOW = toBytes("content_low");
+    private static final byte[] IMAGE_STANDART = toBytes("content_standard");
+    private static final byte[] IMAGE_THUMBNAIL = toBytes("content_thumbnail");
+
+    private static final byte[] IMAGES_ATTACHMENT = toBytes("images");
+//    private static final byte[] VIDEOS = toBytes("videos");
 
     @Override
     public int run(String[] args) throws Exception {
@@ -205,8 +210,6 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
                 putAndTrack(put, COMMENT_COUNT, convert(getValue(COMMENT_COUNT), Converters.integerC));
                 putAndTrack(put, LIKE_COUNT, convert(getValue(LIKE_COUNT), Converters.integerC));
                 putAndTrack(put, LINK, getValue(LINK));
-                putAndTrack(put, IMAGES, getValue(IMAGES));
-                putAndTrack(put, VIDEOS, getValue(VIDEOS));
                 putAndTrack(put, TYPE, getValue(TYPE_PREV));
                 putAndTrack(put, PROFILES_FANS_COUNT, convert(getValue(PROFILES_FANS_COUNT_PREV), Converters.integerC));
                 putAndTrack(put, RATING, convert(getValue(RATING_PREV), Converters.doubleC));
@@ -220,6 +223,9 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
                 putAndTrack(put, LOCATION_ID, getValue(LOCATION_ID));
                 putAndTrack(put, LOCATION_NAME, getValue(LOCATION_NAME));
                 putAndTrack(put, LOCATION_COORDINATES, convert(getValue(LOCATION_COORDINATES), Converters.doubleArrayC));
+
+                putAndTrack(put, IMAGES_ATTACHMENT, Converters.imageConverter.convert(getValue(IMAGE_LOW), getValue(IMAGE_STANDART),
+                        getValue(IMAGE_THUMBNAIL), context));
 
                 return put;
             }

@@ -1,12 +1,14 @@
 package org.apache.hadoop.hbase.mapreduce;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.socialbakers.proto.SocialContents.SocialContent.Attachments.Attachment;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.phoenix.schema.PArrayDataType;
 import org.apache.phoenix.schema.PDataType;
 import org.apache.phoenix.schema.PhoenixArray;
+import org.codehaus.jackson.map.ObjectMapper;
 
+import java.io.IOException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -17,6 +19,10 @@ public class Converters {
 
     public interface Converter {
         byte[] convert(byte[] value, Mapper.Context context);
+    }
+
+    public interface AttachmentConverter {
+        byte[] convert(byte[] contentLow, byte[] contentStandard, byte[] contentThumbnail, Mapper.Context context);
     }
 
     public static Converter integerC = new Converter() {
@@ -129,6 +135,81 @@ public class Converters {
                 context.getCounter("err", "converter.date.err").increment(1);
                 return null;
             }
+        }
+    };
+
+    public static AttachmentConverter imageConverter = new AttachmentConverter() {
+        @Override
+        public byte[] convert(byte[] contentLow, byte[] contentStandard, byte[] contentThumbnail, Mapper.Context context) {
+            Attachment.Image imageLow = createImage(contentLow, "low", context);
+            Attachment.Image imageStandard = createImage(contentStandard, "standard", context);
+            Attachment.Image imageThumbnail = createImage(contentLow, "thumbnail", context);
+
+            if (imageLow == null)
+                return null;
+
+            Attachment.Builder builder = Attachment.newBuilder()
+                    .setImage(imageLow)
+                    .addImages(imageLow);
+
+            if (imageStandard != null)
+                builder.addImages(imageStandard);
+
+            if (imageThumbnail != null)
+                builder.addImages(imageThumbnail);
+
+            return builder.build().toByteArray();
+        }
+
+        private Attachment.Image createImage(byte[] json, String type, Mapper.Context context) {
+            if (json == null || json.length == 0) {
+                context.getCounter("err", "converter.image." + type + ".missing").increment(1);
+                return null;
+            }
+            try {
+                Map<String, Object> data = jsonToMap(json);
+                Attachment.Image.Builder builder = Attachment.Image.newBuilder();
+                builder.setType(type);
+
+                String url = getValueByKey(data, "url", type, context);
+                if (url == null) {
+                    return null;
+                }
+                builder.setUrl(url);
+
+                String width = getValueByKey(data, "width", type, context);
+                if (width != null)
+                    builder.setWidth(Integer.parseInt(width));
+
+                String height = getValueByKey(data, "height", type, context);
+                if (height != null)
+                    builder.setHeight(Integer.parseInt(height));
+
+                return builder.build();
+
+            } catch (IOException e) {
+                e.printStackTrace();
+                context.getCounter("err", "converter.image." + type).increment(1);
+                return null;
+            }
+        }
+
+        private Map<String, Object> jsonToMap(byte[] json) throws IOException {
+            return (Map<String, Object>) mapper.readValue(Bytes.toString(json), Map.class);
+        }
+
+        private String getValueByKey(Map<String, Object> map, String k, String imageName, Mapper.Context context) {
+            if (!map.containsKey(k)) {
+                context.getCounter("err", "converter.image." + imageName + "." + k + ".missing").increment(1);
+                return null;
+            }
+
+            Object value = map.get(k);
+            if (value == null) {
+                context.getCounter("err", "converter.image." + imageName + "." + k + ".is_null.").increment(1);
+                return null;
+            }
+            return value.toString();
         }
     };
 }

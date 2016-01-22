@@ -16,6 +16,12 @@
       <groupId>com.socialbakers</groupId>
       <artifactId>dependency-fix</artifactId>
     </dependency>
+
+    <dependency>
+      <groupId>com.socialbakers.protobuf</groupId>
+      <artifactId>sbks-protos</artifactId>
+      <version>0.2.6-protobuf-2.4.1-SNAPSHOT</version>
+    </dependency>
   </dependencies>
 
   <build>
@@ -86,4 +92,17 @@
       </build>
     </profile>
   </profiles>
+
+  <repositories>
+    <repository>
+      <id>nexus</id>
+      <url>http://mvn.ccl/nexus/content/groups/public/</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+    </repository>
+  </repositories>
 </project>
