@@ -28,7 +28,7 @@ public class Converters {
     }
 
     public interface BiConverter {
-        byte[] convert(byte[] first, byte[] second);
+        byte[] convert(byte[] first, byte[] second, Mapper.Context context);
     }
 
     public static Converter integerC = new Converter() {
@@ -228,34 +228,34 @@ public class Converters {
         private CRC32 crc32 = new CRC32();
 
         @Override
-        public byte[] convert(byte[] profileId, byte[] postId) {
-            Long profileIdL = toLong(profileId);
-            Long postIdL = toLong(postId);
+        public byte[] convert(byte[] profileId, byte[] postId, Mapper.Context context) {
+            try {
+                Long profileIdL = Bytes.toLong(profileId);
+                Long postIdL = Bytes.toLong(postId);
 
-            byte[] bytes = new byte[RK_LEN];
-            ByteBuffer bb = ByteBuffer.allocate(RK_LEN);
-            bb.putLong(PROFILE_ID_OFFSET, profileIdL);
-            bb.putLong(POST_ID_OFFSET, postIdL);
-            bb.position(0);
-            bb.get(bytes);
+                byte[] bytes = new byte[RK_LEN];
 
-            synchronized (crc32) {
-                crc32.update(bytes, PROFILE_ID_OFFSET, Bytes.SIZEOF_LONG);
-                short crc = (short) crc32.getValue();
-                crc32.reset();
+                ByteBuffer bb = ByteBuffer.wrap(bytes);
+                bb.putLong(PROFILE_ID_OFFSET, profileIdL);
+                bb.putLong(POST_ID_OFFSET, postIdL);
                 bb.position(0);
-                bb.putShort(0, crc);
-            }
-            bb.position(0);
-            bb.get(bytes);
-            return bytes;
-        }
+                bb.get(bytes);
 
-        private Long toLong(byte[] bytes) {
-            ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
-            buffer.put(bytes);
-            buffer.flip();
-            return buffer.getLong();
+                synchronized (crc32) {
+                    crc32.update(bytes, PROFILE_ID_OFFSET, Bytes.SIZEOF_LONG);
+                    short crc = (short) crc32.getValue();
+                    crc32.reset();
+                    bb.position(0);
+                    bb.putShort(0, crc);
+                }
+                bb.position(0);
+                bb.get(bytes);
+                return bytes;
+            } catch (Exception e) {
+                e.printStackTrace();
+                context.getCounter("err", "converter.instagram_post.id.create").increment(1);
+                return null;
+            }
         }
     };
 }

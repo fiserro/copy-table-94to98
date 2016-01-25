@@ -4,16 +4,18 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.mapred.JobConf;
-import org.apache.hadoop.mapreduce.Job;
-import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.*;
 import org.apache.hadoop.mapreduce.lib.output.NullOutputFormat;
 import org.apache.hadoop.util.GenericOptionsParser;
 import org.apache.hadoop.util.Tool;
+import org.apache.hadoop.util.ToolRunner;
 import org.apache98.hadoop.hbase.HBaseConfiguration;
 import org.apache98.hadoop.hbase.client.HConnection;
 import org.apache98.hadoop.hbase.client.HConnectionManager;
@@ -22,11 +24,14 @@ import org.apache98.hadoop.hbase.client.Put;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 import static org.apache.hadoop.hbase.mapreduce.Statics.*;
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
+import static org.apache.hadoop.hbase.util.Bytes.toBytesBinary;
 
-public class InaragramPostsCopyTable extends Configured implements Tool {
+public class InstagramPostsCopyTable extends Configured implements Tool {
 
     private static final byte[] D = toBytes("d");
 
@@ -68,6 +73,18 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
 
     private static final byte[] IMAGES_ATTACHMENT = toBytes("images");
 //    private static final byte[] VIDEOS = toBytes("videos");
+
+    /**
+     * Main entry point.
+     *
+     * @param args
+     *            The command line parameters.
+     * @throws Exception
+     *             When running the job fails.
+     */
+    public static void main(String[] args) throws Exception {
+        System.exit(ToolRunner.run(new InstagramPostsCopyTable(), args));
+    }
 
     @Override
     public int run(String[] args) throws Exception {
@@ -126,7 +143,7 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
         scan.addFamily(D);
 
         Job job = new Job(conf, jobName);
-        job.setJarByClass(InaragramPostsCopyTable.class);
+        job.setJarByClass(InstagramPostsCopyTable.class);
 
         job.setSpeculativeExecution(false);
         TableMapReduceUtil.initTableMapperJob(tableName, scan, Mapper94_98.class, null, null, job, true, RegionSplitTableInputFormat.class);
@@ -145,11 +162,39 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
         return job;
     }
 
+
     private static class Mapper94_98 extends TableMapper<ImmutableBytesWritable, KeyValue> {
 
         private List<org.apache98.hadoop.hbase.client.Put> puts = new ArrayList<org.apache98.hadoop.hbase.client.Put>();
         private org.apache98.hadoop.hbase.client.HTable table;
         private int bucketSize;
+
+        public static void main(String[] args) throws IOException, InterruptedException {
+
+            Mapper94_98 mapper94_98 = new Mapper94_98();
+            Configuration conf = org.apache.hadoop.hbase.HBaseConfiguration.create();
+            conf.set(HBASE_ZOOKEEPER_QUORUM, "zookeeper1");
+            conf.set(HBASE_ZOOKEEPER_QUORUM2, "c-sencha-s01");
+            Scan scan = new Scan(toBytesBinary("00_\\x00\\x00\\x00\\x01\\x98\\xE8\\x12\\xD4_\\x7F\\xDB\\xEDU\\x823\\xA5\\xF3"));
+            scan.setCaching(10);
+            HTable htable = new HTable(conf, "instagram_posts");
+            ResultScanner scanner = htable.getScanner(scan);
+            int i = 0;
+
+            FakeContext context = mapper94_98.createFakeContext(conf);
+            mapper94_98.setup(context);
+            for (Result result : scanner) {
+                if (++i > 3) {
+                    break;
+                }
+                mapper94_98.map(new ImmutableBytesWritable(result.getRow()), result, context);
+            }
+            mapper94_98.cleanup(context);
+            for (Counter counter : context.getCounters().values()) {
+                System.out.println(counter.getDisplayName() + ":" + counter.getValue());
+            }
+            htable.close();
+        }
 
         @SuppressWarnings("unchecked")
         @Override
@@ -179,6 +224,114 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
             table.setAutoFlushTo(false);
         }
 
+        private FakeContext createFakeContext(Configuration conf) throws IOException, InterruptedException {
+            TaskAttemptID taskid = new TaskAttemptID("", 1, true, 1, 1);
+            RecordReader<ImmutableBytesWritable, Result> reader = new RecordReader<ImmutableBytesWritable, Result>() {
+
+                @Override
+                public void close() throws IOException {
+                    // TODO Auto-generated method stub
+
+                }
+
+                @Override
+                public ImmutableBytesWritable getCurrentKey() throws IOException, InterruptedException {
+                    // TODO Auto-generated method stub
+                    return null;
+                }
+
+                @Override
+                public Result getCurrentValue() throws IOException, InterruptedException {
+                    // TODO Auto-generated method stub
+                    return null;
+                }
+
+                @Override
+                public float getProgress() throws IOException, InterruptedException {
+                    // TODO Auto-generated method stub
+                    return 0;
+                }
+
+                @Override
+                public void initialize(InputSplit arg0, TaskAttemptContext arg1) throws IOException, InterruptedException {
+                    // TODO Auto-generated method stub
+
+                }
+
+                @Override
+                public boolean nextKeyValue() throws IOException, InterruptedException {
+                    // TODO Auto-generated method stub
+                    return false;
+                }
+            };
+            RecordWriter<ImmutableBytesWritable, KeyValue> writer = new RecordWriter<ImmutableBytesWritable, KeyValue>() {
+
+                @Override
+                public void close(TaskAttemptContext arg0) throws IOException, InterruptedException {
+                }
+
+                @Override
+                public void write(ImmutableBytesWritable arg0, KeyValue arg1) throws IOException, InterruptedException {
+                }
+            };
+            OutputCommitter committer = new OutputCommitter() {
+
+                @Override
+                public void abortTask(TaskAttemptContext arg0) throws IOException {
+                }
+
+                @Override
+                public void commitTask(TaskAttemptContext arg0) throws IOException {
+                }
+
+                @Override
+                public boolean needsTaskCommit(TaskAttemptContext arg0) throws IOException {
+                    return false;
+                }
+
+                @Override
+                public void setupJob(JobContext arg0) throws IOException {
+                }
+
+                @Override
+                public void setupTask(TaskAttemptContext arg0) throws IOException {
+                }
+            };
+            StatusReporter reporter = new StatusReporter() {
+
+                @Override
+                public Counter getCounter(Enum<?> arg0) {
+                    return null;
+                }
+
+                @Override
+                public Counter getCounter(String arg0, String arg1) {
+                    return null;
+                }
+
+                @Override
+                public void progress() {
+                }
+
+                @Override
+                public void setStatus(String arg0) {
+                }
+            };
+            InputSplit split = new InputSplit() {
+
+                @Override
+                public long getLength() throws IOException, InterruptedException {
+                    return 0;
+                }
+
+                @Override
+                public String[] getLocations() throws IOException, InterruptedException {
+                    return null;
+                }
+            };
+            return new FakeContext(conf, taskid, reader, writer, committer, reporter, split);
+        }
+
         private void flush(Context context) throws IOException {
             int putSize = puts.size();
             if (putSize > 0) {
@@ -201,7 +354,11 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
             public Put mapToNewStructurePut() throws ValueNotFound {
                 byte[] profileId = getValue(PREV_PROFILE_ID, true);
                 byte[] postId = getValue(POST_ID, true);
-                byte[] id = Converters.idConverter.convert(profileId, postId);
+                byte[] id = Converters.idConverter.convert(profileId, postId, context);
+
+                if (id == null)
+                    throw new ValueNotFound("Cannot create id for instagram post");
+
                 Put put = new Put(id);
 
                 putAndTrack(put, PROFILE_ID, convert(getValue(PREV_PROFILE_ID), Converters.longC));
@@ -265,6 +422,32 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
                 return field;
             }
 
+        }
+
+        private class FakeContext extends Mapper94_98.Context {
+
+            private Map<String, Counter> counters = new TreeMap<String, Counter>();
+
+            public FakeContext(Configuration conf, TaskAttemptID taskid, RecordReader<ImmutableBytesWritable, Result> reader,
+                               RecordWriter<ImmutableBytesWritable, KeyValue> writer, OutputCommitter committer, StatusReporter reporter,
+                               InputSplit split) throws IOException, InterruptedException {
+                super(conf, taskid, reader, writer, committer, reporter, split);
+            }
+
+            @Override
+            public Counter getCounter(String groupName, String counterName) {
+                String key = groupName + ":" + counterName;
+                Counter counter = counters.get(key);
+                if (counter == null) {
+                    counter = CounterFactory.createCounter(groupName, counterName);
+                    counters.put(key, counter);
+                }
+                return counter;
+            }
+
+            public Map<String, Counter> getCounters() {
+                return counters;
+            }
         }
     }
 }
