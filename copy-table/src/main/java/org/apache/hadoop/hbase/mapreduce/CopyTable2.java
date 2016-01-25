@@ -3,6 +3,7 @@ package org.apache.hadoop.hbase.mapreduce;
 import static org.apache.hadoop.hbase.mapreduce.Statics.*;
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
 import static org.apache.hadoop.hbase.util.Bytes.toBytesBinary;
+import static org.apache.hadoop.hbase.util.Bytes.toStringBinary;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -30,10 +31,7 @@ import org.apache.phoenix.schema.PDataType;
 import org.apache.phoenix.schema.PhoenixArray;
 import org.apache.phoenix.schema.SortOrder;
 import org.apache98.hadoop.hbase.HBaseConfiguration;
-import org.apache98.hadoop.hbase.client.HConnection;
-import org.apache98.hadoop.hbase.client.HConnectionManager;
-import org.apache98.hadoop.hbase.client.HTableUtil;
-import org.apache98.hadoop.hbase.client.Put;
+import org.apache98.hadoop.hbase.client.*;
 
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
@@ -91,8 +89,8 @@ public class CopyTable2 extends Configured implements Tool {
 		} else {
 			jobName += "-lastRow";
 		}
-		scan.setCaching(400);
-		scan.setBatch(10000);
+		// scan.setCaching(400);
+		scan.setBatch(2000);
 		scan.addFamily(E);
 
 		Job job = new Job(conf, jobName);
@@ -147,6 +145,7 @@ public class CopyTable2 extends Configured implements Tool {
 
 	private static class Mapper94_98 extends TableMapper<ImmutableBytesWritable, KeyValue> {
 
+		private static final byte[] VIDEO_RETENTION_GRAPH = toBytes("VIDEO_RETENTION_GRAPH");
 		private static final byte[] COMMENT_COUNT = toBytes("COMMENT_COUNT");
 		private static final byte[] LIKE_COUNT = toBytes("LIKE_COUNT");
 		private static final byte[] SHARE_COUNT = toBytes("SHARE_COUNT");
@@ -193,7 +192,7 @@ public class CopyTable2 extends Configured implements Tool {
 			return pageId + _ + postId;
 		}
 
-		private Map<byte[], String> metricNames = new TreeMap<byte[], String>(Bytes.BYTES_COMPARATOR);
+		// private Map<byte[], String> metricNames = new TreeMap<byte[], String>(Bytes.BYTES_COMPARATOR);
 
 		private Map<byte[], byte[]> metrics = new TreeMap<byte[], byte[]>(Bytes.BYTES_COMPARATOR) {
 			{
@@ -202,12 +201,27 @@ public class CopyTable2 extends Configured implements Tool {
 				put("3.like", "STORIES_BY_ACTION_TYPE_LIKE");
 				put("3.comment", "STORIES_BY_ACTION_TYPE_COMMENT");
 				put("3.share", "STORIES_BY_ACTION_TYPE_SHARE");
+				put("3.claim", "STORIES_BY_ACTION_TYPE_CLAIM");
+				put("3.answer", "STORIES_BY_ACTION_TYPE_ANSWER");
+				put("3.follow", "STORIES_BY_ACTION_TYPE_FOLLOW");
+				put("3.rsvp", "STORIES_BY_ACTION_TYPE_RSVP");
+				put("3.other", "STORIES_BY_ACTION_TYPE_OTHER");
 				put("4.like", "STORYTELLERS_BY_ACTION_TYPE_LIKE");
 				put("4.comment", "STORYTELLERS_BY_ACTION_TYPE_COMMENT");
 				put("4.share", "STORYTELLERS_BY_ACTION_TYPE_SHARE");
+				put("4.claim", "STORYTELLERS_BY_ACTION_TYPE_CLAIM");
+				put("4.answer", "STORYTELLERS_BY_ACTION_TYPE_ANSWER");
+				put("4.follow", "STORYTELLERS_BY_ACTION_TYPE_FOLLOW");
+				put("4.rsvp", "STORYTELLERS_BY_ACTION_TYPE_RSVP");
+				put("4.other", "STORYTELLERS_BY_ACTION_TYPE_OTHER");
 				put("5.like", "STORY_ADDS_BY_ACTION_TYPE_UNIQUE_LIKE");
 				put("5.comment", "STORY_ADDS_BY_ACTION_TYPE_UNIQUE_COMMENT");
 				put("5.share", "STORY_ADDS_BY_ACTION_TYPE_UNIQUE_SHARE");
+				put("5.claim", "STORY_ADDS_BY_ACTION_TYPE_UNIQUE_CLAIM");
+				put("5.answer", "STORY_ADDS_BY_ACTION_TYPE_UNIQUE_ANSWER");
+				put("5.follow", "STORY_ADDS_BY_ACTION_TYPE_UNIQUE_FOLLOW");
+				put("5.rsvp", "STORY_ADDS_BY_ACTION_TYPE_UNIQUE_RSVP");
+				put("5.other", "STORY_ADDS_BY_ACTION_TYPE_UNIQUE_OTHER");
 				put("6", "STORY_ADDS_UNIQUE");
 				put("7", "STORY_ADDS");
 				put("8", "IMPRESSIONS");
@@ -227,17 +241,21 @@ public class CopyTable2 extends Configured implements Tool {
 				put("20.mention", "IMPRESSIONS_BY_STORY_TYPE_MENTION");
 				put("20.other", "IMPRESSIONS_BY_STORY_TYPE_OTHER");
 				put("20.question", "IMPRESSIONS_BY_STORY_TYPE_QUESTION");
-				put("20.user_post", "IMPRESSIONS_BY_STORY_TYPE_USER_POST");
-				put("20.page_post", "IMPRESSIONS_BY_STORY_TYPE_PAGE_POST");
-				put("20.page_subscribe", "IMPRESSIONS_BY_STORY_TYPE_PAGE_SUBSCRIBE");
+				put("20.user post", "IMPRESSIONS_BY_STORY_TYPE_USER_POST");
+				put("20.page post", "IMPRESSIONS_BY_STORY_TYPE_PAGE_POST");
+				put("20.page subscribe", "IMPRESSIONS_BY_STORY_TYPE_PAGE_SUBSCRIBE");
+				put("20.link", "IMPRESSIONS_BY_STORY_TYPE_LINK");
+				put("20.comment", "IMPRESSIONS_BY_STORY_TYPE_COMMENT");
 				put("21.coupon", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_COUPON");
 				put("21.fan", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_FAN");
 				put("21.mention", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_MENTION");
 				put("21.other", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_OTHER");
 				put("21.question", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_QUESTION");
-				put("21.user_post", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_USER_POST");
-				put("21.page_post", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_PAGE_POST");
-				put("21.page_subscribe", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_PAGE_SUBSCRIBE");
+				put("21.user post", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_USER_POST");
+				put("21.page post", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_PAGE_POST");
+				put("21.page subscribe", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_PAGE_SUBSCRIBE");
+				put("21.link", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_LINK");
+				put("21.comment", "IMPRESSIONS_BY_STORY_TYPE_UNIQUE_COMMENT");
 				put("22.paid", "IMPRESSIONS_BY_PAID_NON_PAID_PAID");
 				put("22.unpaid", "IMPRESSIONS_BY_PAID_NON_PAID_UNPAID");
 				put("22.total", "IMPRESSIONS_BY_PAID_NON_PAID_TOTAL");
@@ -249,7 +267,7 @@ public class CopyTable2 extends Configured implements Tool {
 				put("26.other clicks", "CONSUMPTIONS_BY_TYPE_OTHER_CLICKS");
 				put("26.photo view", "CONSUMPTIONS_BY_TYPE_PHOTO_VIEW");
 				put("26.video play", "CONSUMPTIONS_BY_TYPE_VIDEO_PLAY");
-				put("26.link clicks", "CONSUMPTIONS_BY_LINK_CLICKS");
+				put("26.link clicks", "CONSUMPTIONS_BY_TYPE_LINK_CLICKS");
 				put("27.other clicks", "CONSUMPTIONS_BY_TYPE_UNIQUE_OTHER_CLICKS");
 				put("27.photo view", "CONSUMPTIONS_BY_TYPE_UNIQUE_PHOTO_VIEW");
 				put("27.video play", "CONSUMPTIONS_BY_TYPE_UNIQUE_VIDEO_PLAY");
@@ -276,37 +294,26 @@ public class CopyTable2 extends Configured implements Tool {
 				put("39", "VIDEO_VIEWS_ORGANIC_UNIQUE");
 				put("40", "VIDEO_VIEWS_PAID");
 				put("41", "VIDEO_VIEWS_PAID_UNIQUE");
-				put("48", "SHARE_COUNT");
-				put("49", "LIKE_COUNT");
-				put("50", "COMMENT_COUNT");
 				put("51.like", "STORY_ADDS_BY_ACTION_TYPE_LIKE");
 				put("51.comment", "STORY_ADDS_BY_ACTION_TYPE_COMMENT");
 				put("51.share", "STORY_ADDS_BY_ACTION_TYPE_SHARE");
+				put("51.claim", "STORY_ADDS_BY_ACTION_TYPE_CLAIM");
+				put("51.answer", "STORY_ADDS_BY_ACTION_TYPE_ANSWER");
+				put("51.follow", "STORY_ADDS_BY_ACTION_TYPE_FOLLOW");
+				put("51.rsvp", "STORY_ADDS_BY_ACTION_TYPE_RSVP");
+				put("51.other", "STORY_ADDS_BY_ACTION_TYPE_OTHER");
 				put("52", "VIDEO_RETENTION_GRAPH");
-				// put("", "fan_reach");
-				// put("", "engaged_fan");
-				// put("", "video_length");
-				// put("", "video_views");
-				// put("", "video_views_unique");
-				// put("", "video_views_autoplayed");
-				// put("", "video_views_clicked_to_play");
-				// put("", "video_complete_views_30s");
-				// put("", "video_complete_views_30s_paid");
-				// put("", "video_complete_views_30s_organic");
-				// put("", "video_complete_views_30s_unique");
-				// put("", "video_complete_views_30s_autoplayed");
-				// put("", "video_complete_views_30s_clicked_to_play");
-				// put("", "video_retention_graph_autoplayed");
-				// put("", "video_retention_graph_clicked_to_play");
+				put("48", "SHARE_COUNT");
+				put("49", "LIKE_COUNT");
+				put("50", "COMMENT_COUNT");
 			}
 
 			void put(String key, String value) {
 				byte[] bytes = toBytes(value);
 				put(toBytes(key), bytes);
-				metricNames.put(bytes, value);
+				// metricNames.put(bytes, value);
 			}
 		};
-
 		int bucketSize = 20000;
 
 		private Multimap<String, Put> puts = ArrayListMultimap.create();
@@ -326,19 +333,6 @@ public class CopyTable2 extends Configured implements Tool {
 			}
 		};
 
-		private Converter floatC = new Converter() {
-			@Override
-			public Object doConvert(byte[] value, Context context) {
-				try {
-					return (float) Bytes.toInt(value);
-				} catch (Exception e) {
-					e.printStackTrace();
-					context.getCounter("err", "converter.float.err").increment(1);
-					return null;
-				}
-			}
-		};
-
 		private Converter doubleArrayC = new Converter() {
 			@Override
 			public Object doConvert(byte[] value, Context context) {
@@ -350,13 +344,6 @@ public class CopyTable2 extends Configured implements Tool {
 					context.getCounter("err", "converter.double_array.err").increment(1);
 					return null;
 				}
-			}
-		};
-
-		private Map<byte[], Converter> converters = new HashMap<byte[], CopyTable2.Mapper94_98.Converter>() {
-			{
-				put(toBytes("VIDEO_AVG_TIME_WATCHED"), floatC);
-				put(toBytes("VIDEO_RETENTION_GRAPH"), doubleArrayC);
 			}
 		};
 
@@ -390,7 +377,7 @@ public class CopyTable2 extends Configured implements Tool {
 			for (Entry<byte[], byte[]> entry : familyMap.entrySet()) {
 				byte[] column = entry.getKey();
 				if (column.length <= 5) {
-					// System.out.println(toStringBinary(column) + ":" + toStringBinary(entry.getValue()));
+					System.out.println(toStringBinary(column) + ":" + toStringBinary(entry.getValue()));
 					continue;
 				}
 				byte[] metric = new byte[column.length - 5];
@@ -411,18 +398,16 @@ public class CopyTable2 extends Configured implements Tool {
 					byte[] bytes = (byte[]) row.remove(sourceMetric);
 					byte[] targetMetric = metrics.get(sourceMetric);
 					if (targetMetric == null) {
-						System.out.println("missing metric: " + Bytes.toString(sourceMetric));
+						context.getCounter("missing metric", Bytes.toString(sourceMetric)).increment(1);
+						// System.out.println("missing metric: " + Bytes.toString(sourceMetric));
 						continue;
 					}
-					Converter converter = converters.get(targetMetric);
-					if (converter == null) {
-						converter = integerC;
-					}
+					Converter converter = Bytes.equals(VIDEO_RETENTION_GRAPH, targetMetric) ? doubleArrayC : integerC;
 					Object value = converter.convert(bytes, context);
 					if (value != null) {
 						row.put(targetMetric, value);
+						cellCounter++;
 					}
-					cellCounter++;
 				}
 			}
 
@@ -441,10 +426,14 @@ public class CopyTable2 extends Configured implements Tool {
 				Date date = new Date((long) entry.getKey() * 1000);
 				updateTime(date, postRow, postId.length + 1);
 				updateTime(date, pageRow, pageId.length + 1);
-				Put postPut = new Put(postRow);
+				// Put postPut = new Put(postRow);
+				// postPut.setDurability(Durability.SKIP_WAL);
 				Put pagePut = new Put(pageRow);
-				Put postInsPut = new Put(postRow);
+				pagePut.setDurability(Durability.SKIP_WAL);
+				// Put postInsPut = new Put(postRow);
+				// postInsPut.setDurability(Durability.SKIP_WAL);
 				Put pageInsPut = new Put(pageRow);
+				pageInsPut.setDurability(Durability.SKIP_WAL);
 				for (Entry<byte[], Object> entry2 : entry.getValue().entrySet()) {
 					byte[] metric = entry2.getKey();
 					byte[] value;
@@ -461,23 +450,23 @@ public class CopyTable2 extends Configured implements Tool {
 					}
 					if (Bytes.equals(metric, SHARE_COUNT) || Bytes.equals(metric, LIKE_COUNT)
 							|| Bytes.equals(metric, COMMENT_COUNT)) {
-						context.getCounter("mapped1", metricNames.get(metric)).increment(1);
-						postPut.add(_0, metric, value);
+						// context.getCounter("mapped1", metricNames.get(metric)).increment(1);
+						// postPut.add(_0, metric, value);
 						pagePut.add(_0, metric, value);
 					} else {
-						context.getCounter("mapped2", metricNames.get(metric)).increment(1);
-						postInsPut.add(_0, metric, value);
+						// context.getCounter("mapped2", metricNames.get(metric)).increment(1);
+						// postInsPut.add(_0, metric, value);
 						pageInsPut.add(_0, metric, value);
 					}
 				}
-				if (!postPut.isEmpty()) {
-					postPut.add(_0, PROFILE_ID, pageId);
-					puts.put(FB_POST_EVOLUTION, postPut);
-				}
-				if (!postInsPut.isEmpty()) {
-					postInsPut.add(_0, PROFILE_ID, pageId);
-					puts.put(FB_POST_INSIGHTS_EVOLUTION, postInsPut);
-				}
+				// if (!postPut.isEmpty()) {
+				// postPut.add(_0, PROFILE_ID, pageId);
+				// puts.put(FB_POST_EVOLUTION, postPut);
+				// }
+				// if (!postInsPut.isEmpty()) {
+				// postInsPut.add(_0, PROFILE_ID, pageId);
+				// puts.put(FB_POST_INSIGHTS_EVOLUTION, postInsPut);
+				// }
 				if (!pagePut.isEmpty()) {
 					puts.put(FB_PAGE_POST_EVOLUTION, pagePut);
 				}
