@@ -30,8 +30,6 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
 
     private static final byte[] D = toBytes("d");
 
-    private static final byte[] ID = toBytes("page_id");
-
     private static final byte[] PROFILE_ID = toBytes("profile_id");
     private static final byte[] PREV_PROFILE_ID = toBytes("page_id");
 
@@ -201,10 +199,13 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
             }
 
             public Put mapToNewStructurePut() throws ValueNotFound {
-                byte[] id = getValue(ID, true);
+                byte[] profileId = getValue(PREV_PROFILE_ID, true);
+                byte[] postId = getValue(POST_ID, true);
+                byte[] id = Converters.idConverter.convert(profileId, postId);
                 Put put = new Put(id);
 
                 putAndTrack(put, PROFILE_ID, convert(getValue(PREV_PROFILE_ID), Converters.longC));
+                putAndTrack(put, POST_ID, convert(getValue(POST_ID_PREV), Converters.longC));
                 putAndTrack(put, CREATED_TIME, convert(getValue(CREATED_TIME), Converters.dateC));
                 putAndTrack(put, MESSAGE, getValue(MESSAGE));
                 putAndTrack(put, COMMENT_COUNT, convert(getValue(COMMENT_COUNT), Converters.integerC));
@@ -214,7 +215,6 @@ public class InaragramPostsCopyTable extends Configured implements Tool {
                 putAndTrack(put, PROFILES_FANS_COUNT, convert(getValue(PROFILES_FANS_COUNT_PREV), Converters.integerC));
                 putAndTrack(put, RATING, convert(getValue(RATING_PREV), Converters.doubleC));
                 putAndTrack(put, SBKS_DOWNLOAD, convert(getValue(SBKS_DOWNLOAD_PREV), Converters.dateC));
-                putAndTrack(put, POST_ID, convert(getValue(POST_ID_PREV), Converters.longC));
                 putAndTrack(put, FILTER, getValue(FILTER_PREV));
                 putAndTrack(put, CAPTION_ID, getValue(CAPTION_ID_PREV));
                 putAndTrack(put, CAPTION_USER_ID, getValue(CAPTION_USER_ID_PREV));

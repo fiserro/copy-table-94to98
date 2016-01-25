@@ -9,9 +9,11 @@ import org.apache.phoenix.schema.PhoenixArray;
 import org.codehaus.jackson.map.ObjectMapper;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.zip.CRC32;
 
 public class Converters {
 
@@ -23,6 +25,10 @@ public class Converters {
 
     public interface AttachmentConverter {
         byte[] convert(byte[] contentLow, byte[] contentStandard, byte[] contentThumbnail, Mapper.Context context);
+    }
+
+    public interface BiConverter {
+        byte[] convert(byte[] first, byte[] second);
     }
 
     public static Converter integerC = new Converter() {
@@ -210,6 +216,46 @@ public class Converters {
                 return null;
             }
             return value.toString();
+        }
+    };
+
+    public static BiConverter idConverter = new BiConverter(){
+
+        private static final int RK_LEN = 18;
+        private static final int PROFILE_ID_OFFSET = 2;
+        private static final int POST_ID_OFFSET = 10;
+
+        private CRC32 crc32 = new CRC32();
+
+        @Override
+        public byte[] convert(byte[] profileId, byte[] postId) {
+            Long profileIdL = toLong(profileId);
+            Long postIdL = toLong(postId);
+
+            byte[] bytes = new byte[RK_LEN];
+            ByteBuffer bb = ByteBuffer.allocate(RK_LEN);
+            bb.putLong(PROFILE_ID_OFFSET, profileIdL);
+            bb.putLong(POST_ID_OFFSET, postIdL);
+            bb.position(0);
+            bb.get(bytes);
+
+            synchronized (crc32) {
+                crc32.update(bytes, PROFILE_ID_OFFSET, Bytes.SIZEOF_LONG);
+                short crc = (short) crc32.getValue();
+                crc32.reset();
+                bb.position(0);
+                bb.putShort(0, crc);
+            }
+            bb.position(0);
+            bb.get(bytes);
+            return bytes;
+        }
+
+        private Long toLong(byte[] bytes) {
+            ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
+            buffer.put(bytes);
+            buffer.flip();
+            return buffer.getLong();
         }
     };
 }
