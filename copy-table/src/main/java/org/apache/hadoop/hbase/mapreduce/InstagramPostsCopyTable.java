@@ -17,9 +17,7 @@ import org.apache.hadoop.util.GenericOptionsParser;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache98.hadoop.hbase.HBaseConfiguration;
-import org.apache98.hadoop.hbase.client.HConnection;
-import org.apache98.hadoop.hbase.client.HConnectionManager;
-import org.apache98.hadoop.hbase.client.Put;
+import org.apache98.hadoop.hbase.client.*;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -29,14 +27,13 @@ import java.util.TreeMap;
 
 import static org.apache.hadoop.hbase.mapreduce.Statics.*;
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
-import static org.apache.hadoop.hbase.util.Bytes.toBytesBinary;
 
 public class InstagramPostsCopyTable extends Configured implements Tool {
 
     private static final byte[] D = toBytes("d");
 
     private static final byte[] PROFILE_ID = toBytes("profile_id");
-    private static final byte[] PREV_PROFILE_ID = toBytes("page_id");
+    private static final byte[] PROFILE_ID_PREV = toBytes("page_id");
 
     private static final byte[] CREATED_TIME = toBytes("created_time");
     private static final byte[] MESSAGE = toBytes("message");
@@ -48,7 +45,7 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
     private static final byte[] PROFILES_FANS_COUNT = toBytes("sbks.profile_fans_count");
     private static final byte[] PROFILES_FANS_COUNT_PREV = toBytes("page_fans");
     private static final byte[] RATING = toBytes("sbks.er");
-    private static final byte[] RATING_PREV = toBytes("rating");
+    private static final byte[] RATING_PREV = toBytes("sbks_ea");
     private static final byte[] SBKS_DOWNLOAD = toBytes("sbks.download_time");
     private static final byte[] SBKS_DOWNLOAD_PREV = toBytes("sbks_download_tms");
     private static final byte[] POST_ID = toBytes("instagram.post_id");
@@ -59,19 +56,23 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
     private static final byte[] CAPTION_ID_PREV = toBytes("caption_id");
     private static final byte[] CAPTION_USER_ID = toBytes("instagram.caption_user_id");
     private static final byte[] CAPTION_USER_ID_PREV = toBytes("caption_user_id");
-    private static final byte[] USERS_IN_PHOTO = toBytes("users_in_photo");
-    private static final byte[] HASHTAGS = toBytes("hashtags");
+
+    private static final byte[] USERS_IN_PHOTO_PREV = toBytes("users_in_photo");
     private static final byte[] HASHTAGS_PREV = toBytes("tags");
+    private static final byte[] ENTITIES = toBytes("entities");
+
+
+    private static final byte[] LOCATION_PREV = toBytes("location");
 
     private static final byte[] LOCATION_ID = toBytes("location.id");
     private static final byte[] LOCATION_NAME = toBytes("location.name");
     private static final byte[] LOCATION_COORDINATES = toBytes("location.coordinates");
 
     private static final byte[] IMAGE_LOW = toBytes("content_low");
-    private static final byte[] IMAGE_STANDART = toBytes("content_standard");
+    private static final byte[] IMAGE_STANDARD = toBytes("content_standard");
     private static final byte[] IMAGE_THUMBNAIL = toBytes("content_thumbnail");
 
-    private static final byte[] IMAGES_ATTACHMENT = toBytes("images");
+    private static final byte[] IMAGES_ATTACHMENT = toBytes("attachments");
 //    private static final byte[] VIDEOS = toBytes("videos");
 
     /**
@@ -173,9 +174,13 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
 
             Mapper94_98 mapper94_98 = new Mapper94_98();
             Configuration conf = org.apache.hadoop.hbase.HBaseConfiguration.create();
-            conf.set(HBASE_ZOOKEEPER_QUORUM, "zookeeper1");
-            conf.set(HBASE_ZOOKEEPER_QUORUM2, "c-sencha-s01");
-            Scan scan = new Scan(toBytesBinary("00_\\x00\\x00\\x00\\x01\\x98\\xE8\\x12\\xD4_\\x7F\\xDB\\xEDU\\x823\\xA5\\xF3"));
+            conf.set(HBASE_ZOOKEEPER_QUORUM, "zookeeper1.us-w2.aws.ccl");
+            conf.set(HBASE_ZOOKEEPER_QUORUM2, "c-sencha-s01.us-w2.aws.ccl");
+            conf.set(NEW_TABLE_NAME, "ig_posts");
+
+//            Scan scan = new Scan(Bytes.toBytesBinary("\\x00\\x01-_\\x00\\x00\\x00\\x00\\x0B-\\x01\\x00_\\x7F\\xFF\\xFE\\xAF\\xE5\\xA1>w_\\x00\\x00\\x00\\x00"));
+            Scan scan = new Scan(Bytes.toBytesBinary("\\x00\\x01-_\\x00\\x00\\x00\\x00\\x0B-\\x01\\x00_\\x7F\\xFF\\xFE\\xAF\\xD0z\\x0Dg_\\x00\\x00\\x00\\x00"));
+//            Scan scan = new Scan();
             scan.setCaching(10);
             HTable htable = new HTable(conf, "instagram_posts");
             ResultScanner scanner = htable.getScanner(scan);
@@ -184,16 +189,40 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
             FakeContext context = mapper94_98.createFakeContext(conf);
             mapper94_98.setup(context);
             for (Result result : scanner) {
-                if (++i > 3) {
+                if (++i > 1) {
                     break;
                 }
+                byte[] rowId = Converters.idConverter.convert(
+                        result.getValue(D, PROFILE_ID_PREV),
+                        result.getValue(D, POST_ID_PREV),
+                        context
+                );
+                org.apache98.hadoop.hbase.client.Result r = mapper94_98.getByRowId(rowId);
+//                if (r.isEmpty() && Bytes.toString(result.getValue(D, LOCATION_PREV)).length() > 5) {
+//                    System.out.println(Bytes.toStringBinary(result.getRow()));
+//                    System.out.println("" + Bytes.toLong(result.getValue(D, POST_ID_PREV)) + "_" + Bytes.toLong(result.getValue(D, PROFILE_ID_PREV)));
+//                }
+                if (!r.isEmpty()) {
+                    mapper94_98.delete(rowId);
+                }
+                System.out.println("" + Bytes.toLong(result.getValue(D, POST_ID_PREV)) + "_" + Bytes.toLong(result.getValue(D, PROFILE_ID_PREV)));
                 mapper94_98.map(new ImmutableBytesWritable(result.getRow()), result, context);
             }
+            mapper94_98.flush(context);
             mapper94_98.cleanup(context);
             for (Counter counter : context.getCounters().values()) {
                 System.out.println(counter.getDisplayName() + ":" + counter.getValue());
             }
             htable.close();
+        }
+
+        private void delete(byte[] rowId) {
+            Delete d = new Delete(rowId);
+            try {
+                table.delete(d);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
 
         @SuppressWarnings("unchecked")
@@ -222,6 +251,17 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
             HConnection connection = HConnectionManager.createConnection(conf98);
             table = (org.apache98.hadoop.hbase.client.HTable) connection.getTable(conf.get(NEW_TABLE_NAME));
             table.setAutoFlushTo(false);
+        }
+
+
+        public org.apache98.hadoop.hbase.client.Result getByRowId(byte[] rowId) {
+            Get get = new Get(rowId);
+            try {
+                return table.get(get);
+            } catch (IOException e) {
+                e.printStackTrace();
+                return null;
+            }
         }
 
         private FakeContext createFakeContext(Configuration conf) throws IOException, InterruptedException {
@@ -332,10 +372,10 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
             return new FakeContext(conf, taskid, reader, writer, committer, reporter, split);
         }
 
-        private void flush(Context context) throws IOException {
+        public void flush(Context context) throws IOException {
             int putSize = puts.size();
             if (putSize > 0) {
-//                HTableUtil.bucketRsPut(table, puts);
+                HTableUtil.bucketRsPut(table, puts);
                 context.getCounter("hbase98", "flush").increment(1);
                 context.getCounter("hbase98", "put").increment(putSize);
                 puts.clear();
@@ -352,17 +392,17 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
             }
 
             public Put mapToNewStructurePut() throws ValueNotFound {
-                byte[] profileId = getValue(PREV_PROFILE_ID, true);
-                byte[] postId = getValue(POST_ID, true);
+                byte[] profileId = getValue(PROFILE_ID_PREV, true);
+                byte[] postId = getValue(POST_ID_PREV, true);
                 byte[] id = Converters.idConverter.convert(profileId, postId, context);
 
                 if (id == null)
-                    throw new ValueNotFound("Cannot create id for instagram post");
+                    throw new ValueNotFound("row_id");
 
                 Put put = new Put(id);
 
-                putAndTrack(put, PROFILE_ID, convert(getValue(PREV_PROFILE_ID), Converters.longC));
-                putAndTrack(put, POST_ID, convert(getValue(POST_ID_PREV), Converters.longC));
+                putAndTrack(put, PROFILE_ID, convert(profileId, Converters.longC));
+                putAndTrack(put, POST_ID, convert(postId, Converters.longC));
                 putAndTrack(put, CREATED_TIME, convert(getValue(CREATED_TIME), Converters.dateC));
                 putAndTrack(put, MESSAGE, getValue(MESSAGE));
                 putAndTrack(put, COMMENT_COUNT, convert(getValue(COMMENT_COUNT), Converters.integerC));
@@ -370,19 +410,24 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
                 putAndTrack(put, LINK, getValue(LINK));
                 putAndTrack(put, TYPE, getValue(TYPE_PREV));
                 putAndTrack(put, PROFILES_FANS_COUNT, convert(getValue(PROFILES_FANS_COUNT_PREV), Converters.integerC));
-                putAndTrack(put, RATING, convert(getValue(RATING_PREV), Converters.doubleC));
+                putAndTrack(put, RATING, convert(getValue(RATING_PREV), Converters.raitingConverter));
                 putAndTrack(put, SBKS_DOWNLOAD, convert(getValue(SBKS_DOWNLOAD_PREV), Converters.dateC));
                 putAndTrack(put, FILTER, getValue(FILTER_PREV));
-                putAndTrack(put, CAPTION_ID, getValue(CAPTION_ID_PREV));
-                putAndTrack(put, CAPTION_USER_ID, getValue(CAPTION_USER_ID_PREV));
-                putAndTrack(put, USERS_IN_PHOTO, getValue(USERS_IN_PHOTO));
-                putAndTrack(put, HASHTAGS, getValue(HASHTAGS_PREV));
-                putAndTrack(put, LOCATION_ID, getValue(LOCATION_ID));
-                putAndTrack(put, LOCATION_NAME, getValue(LOCATION_NAME));
-                putAndTrack(put, LOCATION_COORDINATES, convert(getValue(LOCATION_COORDINATES), Converters.doubleArrayC));
+                putAndTrack(put, CAPTION_ID, convert(getValue(CAPTION_ID_PREV), Converters.longToStringC));
+                putAndTrack(put, CAPTION_USER_ID, convert(getValue(CAPTION_USER_ID_PREV), Converters.longToStringC));
 
-                putAndTrack(put, IMAGES_ATTACHMENT, Converters.imageConverter.convert(getValue(IMAGE_LOW), getValue(IMAGE_STANDART),
-                        getValue(IMAGE_THUMBNAIL), context));
+                putAndTrack(put, ENTITIES, Converters.entitiesConverter.convert(getValue(USERS_IN_PHOTO_PREV),
+                        getValue(HASHTAGS_PREV), context));
+
+                Converters.LocationConverter.Location location =
+                        Converters.locationConverter.convert(getValue(LOCATION_PREV), context);
+
+                putAndTrack(put, LOCATION_ID, location.id);
+                putAndTrack(put, LOCATION_NAME, location.name);
+                putAndTrack(put, LOCATION_COORDINATES, location.coordinates);
+
+                putAndTrack(put, IMAGES_ATTACHMENT, Converters.attachmentsWithImageConverter.convert(getValue(IMAGE_LOW),
+                        getValue(IMAGE_STANDARD), getValue(IMAGE_THUMBNAIL), context));
 
                 return put;
             }
@@ -394,7 +439,7 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
                     context.getCounter("err", "empty_field_" + Bytes.toString(qualifier)).increment(1);
             }
 
-            private byte[] getValue(byte[] qualifier, boolean isRequired) throws ValueNotFound {
+            public byte[] getValue(byte[] qualifier, boolean isRequired) throws ValueNotFound {
                 byte[] data = result.getValue(D, qualifier);
                 if (data == null && isRequired)
                     throw new ValueNotFound(Bytes.toString(qualifier));

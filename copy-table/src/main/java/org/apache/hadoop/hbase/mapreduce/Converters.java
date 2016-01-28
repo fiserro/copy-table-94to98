@@ -1,41 +1,76 @@
 package org.apache.hadoop.hbase.mapreduce;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.socialbakers.proto.SocialContents.SocialContent.Attachments;
 import com.socialbakers.proto.SocialContents.SocialContent.Attachments.Attachment;
+import com.socialbakers.proto.SocialContents.SocialContent.Entities;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.phoenix.schema.PArrayDataType;
 import org.apache.phoenix.schema.PDataType;
 import org.apache.phoenix.schema.PhoenixArray;
-import org.codehaus.jackson.map.ObjectMapper;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
-import java.util.*;
+import java.nio.charset.Charset;
+import java.util.Date;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
 import java.util.zip.CRC32;
 
 public class Converters {
 
     private static ObjectMapper mapper = new ObjectMapper();
 
+
     public interface Converter {
         byte[] convert(byte[] value, Mapper.Context context);
+
     }
 
     public interface AttachmentConverter {
         byte[] convert(byte[] contentLow, byte[] contentStandard, byte[] contentThumbnail, Mapper.Context context);
     }
 
+    public interface EntitiesConverter {
+        byte[] convert(byte[] usersInPhoto, byte[] tags, Mapper.Context context);
+    }
+
+    public interface LocationConverter {
+        class Location {
+            public byte[] coordinates;
+            public byte[] name;
+            public byte[] id;
+        }
+
+        Location convert(byte[] value, Mapper.Context context);
+    }
+
     public interface BiConverter {
         byte[] convert(byte[] first, byte[] second, Mapper.Context context);
     }
+
+    public static Converter longToStringC = new Converter() {
+        @Override
+        public byte[] convert(byte[] value, Mapper.Context context) {
+            try {
+                return ("" + Bytes.toLong(value)).getBytes(Charset.forName("UTF-8"));
+            } catch (Exception e) {
+                e.printStackTrace();
+                context.getCounter("err", "converter.long_to_string.err").increment(1);
+                return null;
+            }
+        }
+    };
 
     public static Converter integerC = new Converter() {
         @Override
         public byte[] convert(byte[] value, Mapper.Context context) {
             try {
-                return PDataType.INTEGER.toBytes(Integer.valueOf(Bytes.toString(value)));
+                return PDataType.INTEGER.toBytes(Bytes.toInt(value));
             } catch (Exception e) {
                 e.printStackTrace();
                 context.getCounter("err", "converter.integer.err").increment(1);
@@ -48,7 +83,7 @@ public class Converters {
         @Override
         public byte[] convert(byte[] value, Mapper.Context context) {
             try {
-                return PDataType.LONG.toBytes(Integer.valueOf(Bytes.toString(value)));
+                return PDataType.LONG.toBytes(Bytes.toLong(value));
             } catch (Exception e) {
                 e.printStackTrace();
                 context.getCounter("err", "converter.long.err").increment(1);
@@ -61,7 +96,7 @@ public class Converters {
         @Override
         public byte[] convert(byte[] value, Mapper.Context context) {
             try {
-                return PDataType.DOUBLE.toBytes(Double.valueOf(Bytes.toString(value)));
+                return PDataType.DOUBLE.toBytes(Bytes.toDouble(value));
             } catch (Exception e) {
                 e.printStackTrace();
                 context.getCounter("err", "converter.double.err").increment(1);
@@ -70,70 +105,47 @@ public class Converters {
         }
     };
 
-    public static Converter doubleArrayC = new Converter() {
-        @Override
-        public byte[] convert(byte[] value, Mapper.Context context) {
-            String string = Bytes.toString(value);
-            try {
-                List<Double> doubles = new ArrayList<Double>();
-                if (string.startsWith("[")) {
-                    string = string.replaceFirst("\\[", "").replaceFirst("\\]", "");
-                    for (String dStr : string.split(",")) {
-                        doubles.add(Double.valueOf(dStr.trim()));
-                    }
-                } else if (string.startsWith("{")) {
-                    NavigableMap<Integer, Double> sortedMap = new TreeMap<Integer, Double>();
-                    for (Map.Entry<String, Object> entry : ((Map<String, Object>) mapper.readValue(string, Map.class)).entrySet()) {
-                        sortedMap.put(Integer.valueOf(entry.getKey()), Double.valueOf(entry.getValue().toString()));
-                    }
-                    doubles.addAll(sortedMap.values());
-                }
-                PhoenixArray phoenixArray = PArrayDataType.instantiatePhoenixArray(PDataType.DOUBLE, doubles.toArray());
-                return PDataType.DOUBLE_ARRAY.toBytes(phoenixArray);
-            } catch (Exception e) {
-                System.err.println("double_array_err:" + string);
-                e.printStackTrace();
-                context.getCounter("err", "converter.double_array.err").increment(1);
-                return null;
-            }
-        }
-    };
+//    public static Converter doubleArrayC = new Converter() {
+//        @Override
+//        public byte[] convert(byte[] value, Mapper.Context context) {
+//            String string = Bytes.toString(value);
+//            try {
+//                List<Double> doubles = new ArrayList<Double>();
+//                if (string.startsWith("[")) {
+//                    string = string.replaceFirst("\\[", "").replaceFirst("\\]", "");
+//                    for (String dStr : string.split(",")) {
+//                        doubles.add(Double.valueOf(dStr.trim()));
+//                    }
+//                } else if (string.startsWith("{")) {
+//                    NavigableMap<Integer, Double> sortedMap = new TreeMap<Integer, Double>();
+//                    for (Map.Entry<String, Object> entry : ((Map<String, Object>) mapper.readValue(string, Map.class)).entrySet()) {
+//                        sortedMap.put(Integer.valueOf(entry.getKey()), Double.valueOf(entry.getValue().toString()));
+//                    }
+//                    doubles.addAll(sortedMap.values());
+//                }
+//                PhoenixArray phoenixArray = PArrayDataType.instantiatePhoenixArray(PDataType.DOUBLE, doubles.toArray());
+//                return PDataType.DOUBLE_ARRAY.toBytes(phoenixArray);
+//            } catch (Exception e) {
+//                System.err.println("double_array_err:" + string);
+//                e.printStackTrace();
+//                context.getCounter("err", "converter.double_array.err").increment(1);
+//                return null;
+//            }
+//        }
+//    };
 
     public static Converter dateC = new Converter() {
-
-        private final String[] formats = new String[] { "yyyy-MM-dd'T'HH:mm:ssZ", "yyyy-MM-dd'T'HH:mm:ss",
-                "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'" };
-
         @Override
         public byte[] convert(byte[] value, Mapper.Context context) {
 
             try {
-                String string = Bytes.toString(value);
-                Date date;
-                if (string.matches("[0-9]{1,11}")) {
-                    date = new Date(Long.valueOf(string) * 1000);
-                } else if (string.matches("[0-9]{11,}")) {
-                    date = new Date(Long.valueOf(string));
+                Long millis;
+                if (value.length < 8) {
+                    millis = (long) Bytes.toInt(value) * 1000;
                 } else {
-                    date = null;
-                    if (string.matches(".*?[\\+\\- ]([0-9]{2}):([0-9]{2})$")) {
-                        string = string.replaceFirst("([0-9]{2}):([0-9]{2})$", "$1$2");
-                    }
-                    for (String format : formats) {
-                        SimpleDateFormat sdf = new SimpleDateFormat(format);
-                        sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
-                        try {
-                            date = sdf.parse(string);
-                            break;
-                        } catch (ParseException e1) {
-                        }
-                    }
+                    millis = Bytes.toLong(value);
                 }
-                if (date == null) {
-                    System.err.println("Can't parse date: '" + string + "'");
-                    context.getCounter("err", "converter.date.err").increment(1);
-                    return null;
-                }
+                Date date = new Date(millis);
                 return PDataType.DATE.toBytes(date);
 
             } catch (Exception e) {
@@ -144,12 +156,12 @@ public class Converters {
         }
     };
 
-    public static AttachmentConverter imageConverter = new AttachmentConverter() {
+    public static AttachmentConverter attachmentsWithImageConverter = new AttachmentConverter() {
         @Override
         public byte[] convert(byte[] contentLow, byte[] contentStandard, byte[] contentThumbnail, Mapper.Context context) {
             Attachment.Image imageLow = createImage(contentLow, "low", context);
             Attachment.Image imageStandard = createImage(contentStandard, "standard", context);
-            Attachment.Image imageThumbnail = createImage(contentLow, "thumbnail", context);
+            Attachment.Image imageThumbnail = createImage(contentThumbnail, "thumbnail", context);
 
             if (imageLow == null)
                 return null;
@@ -164,7 +176,8 @@ public class Converters {
             if (imageThumbnail != null)
                 builder.addImages(imageThumbnail);
 
-            return builder.build().toByteArray();
+            return Attachments.newBuilder().addAttachment(builder.build())
+                    .build().toByteArray();
         }
 
         private Attachment.Image createImage(byte[] json, String type, Mapper.Context context) {
@@ -258,4 +271,169 @@ public class Converters {
             }
         }
     };
+
+    public static LocationConverter locationConverter = new LocationConverter() {
+        @Override
+        public Location convert(byte[] value, Mapper.Context context) {
+            Location location = new Location();
+            if (value == null || value.length == 0)
+                return location;
+            try {
+                JsonLocation json = mapper.readValue(value, JsonLocation.class);
+                if (json == null)
+                    return location;
+
+                if (json.id != null)
+                    location.id = json.id.getBytes(Charset.forName("UTF-8"));
+
+                if (json.name != null)
+                    location.name = json.name.getBytes(Charset.forName("UTF-8"));
+
+                List<Double> coordinates = new LinkedList<Double>();
+
+                if (json.latitude != null)
+                    coordinates.add(json.latitude);
+                else
+                    context.getCounter("err", "converter.location.latitude.not_set").increment(1);
+
+                if (json.longitude != null)
+                    coordinates.add(json.longitude);
+                else
+                    context.getCounter("err", "converter.location.longitude.not_set").increment(1);
+
+                if (coordinates.size() > 0) {
+                    PhoenixArray phoenixArray = PArrayDataType.instantiatePhoenixArray(PDataType.DOUBLE, coordinates.toArray());
+                    location.coordinates = PDataType.DOUBLE_ARRAY.toBytes(phoenixArray);
+                }
+
+           } catch (IOException e) {
+                e.printStackTrace();
+                context.getCounter("err", "converter.location.parse_json").increment(1);
+            }
+           return location;
+        }
+    };
+
+    public static EntitiesConverter entitiesConverter = new EntitiesConverter() {
+
+        private List<Entities.Tag> convertTag(byte[] value, Mapper.Context context) {
+            List<Entities.Tag> tags = new LinkedList<Entities.Tag>();
+            try {
+                List<UsersInPhoto> usersInPhoto = mapper.readValue(value, new TypeReference<List<UsersInPhoto>>() {});
+                for (UsersInPhoto userInPhoto : usersInPhoto) {
+                    Entities.Tag.Builder tagBuilder =
+                            Entities.Tag.newBuilder();
+                    tagBuilder.setType(Entities.Tag.Type.USER_IN_PHOTO);
+
+                    if (userInPhoto.user != null) {
+                        if (userInPhoto.user.id != null) {
+                            tagBuilder.setId(userInPhoto.user.id);
+                        }
+                        if (userInPhoto.user.username != null) {
+                            tagBuilder.setName(userInPhoto.user.username);
+                        }
+                    }
+                    if (userInPhoto.position != null) {
+                        if (userInPhoto.position.x != null) {
+                            tagBuilder.addPosition(userInPhoto.position.x);
+                        }
+                        if (userInPhoto.position.y != null) {
+                            tagBuilder.addPosition(userInPhoto.position.y);
+                        }
+                    }
+                    tags.add(tagBuilder.build());
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+                context.getCounter("err", "converter.user_in_photo.parse_json").increment(1);
+            }
+            return tags;
+        }
+
+        private List<Entities.Hashtag> convertHashTag(byte[] value, Mapper.Context context) {
+            List<Entities.Hashtag> tags = new LinkedList<Entities.Hashtag>();
+
+            try {
+                List<String> hashtags = mapper.readValue(value, new TypeReference<List<String>>() {});
+                for (String tag : hashtags) {
+                    tags.add(Entities.Hashtag.newBuilder().setText(tag).build());
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+                context.getCounter("err", "converter.hashtags.parse_json").increment(1);
+            }
+            return tags;
+        }
+
+        @Override
+        public byte[] convert(byte[] usersInPhoto, byte[] tags, Mapper.Context context) {
+            Entities.Builder entities = Entities.newBuilder();
+
+            if (usersInPhoto == null || usersInPhoto.length == 0) {
+                context.getCounter("err", "converter.user_in_photo.not_set").increment(1);
+            } else {
+                List<Entities.Tag> photoTags = convertTag(usersInPhoto, context);
+                if (photoTags.size() > 0)
+                    entities.addAllTags(photoTags);
+                else
+                    context.getCounter("err", "converter.user_in_photo.is_empty").increment(1);
+            }
+
+            if (tags == null || tags.length == 0) {
+                context.getCounter("err", "converter.hash_tags.not_set").increment(1);
+            } else {
+                List<Entities.Hashtag> hashtags = convertHashTag(tags, context);
+                if (hashtags.size() > 0)
+                    entities.addAllHashtags(hashtags);
+                else
+                    context.getCounter("err", "converter.hash_tags.is_empty").increment(1);
+            }
+
+            return entities.build().toByteArray();
+        }
+    };
+
+    public static Converter raitingConverter = new Converter() {
+        @Override
+        public byte[] convert(byte[] value, Mapper.Context context) {
+            byte[] raiting = null;
+            try {
+                Map<String, Object> map = (Map<String, Object>) mapper.readValue(value, Map.class);
+                if (!map.containsKey("rating")) {
+                    context.getCounter("err", "converter.sbks_ea_rating.rating_not_set").increment(1);
+                } else {
+                    String r = map.get("rating").toString();
+                    raiting = PDataType.DOUBLE.toBytes(Double.parseDouble(map.get("rating").toString()));
+                }
+
+            } catch (IOException e) {
+                e.printStackTrace();
+                context.getCounter("err", "converter.sbks_ea_rating.parse_json").increment(1);
+            }
+            return raiting;
+        }
+    };
+
+    public static class UsersInPhoto {
+        public Position position;
+        public User user;
+
+        public static class Position {
+            public Float x;
+            public Float y;
+        }
+
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        public static class User {
+            public String username;
+            public String id;
+        }
+    }
+
+    private static class JsonLocation {
+        public Double latitude;
+        public Double longitude;
+        public String name;
+        public String id;
+    }
 }
