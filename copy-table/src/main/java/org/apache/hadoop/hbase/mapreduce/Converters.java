@@ -92,48 +92,6 @@ public class Converters {
         }
     };
 
-    public static Converter doubleC = new Converter() {
-        @Override
-        public byte[] convert(byte[] value, Mapper.Context context) {
-            try {
-                return PDataType.DOUBLE.toBytes(Bytes.toDouble(value));
-            } catch (Exception e) {
-                e.printStackTrace();
-                context.getCounter("err", "converter.double.err").increment(1);
-                return null;
-            }
-        }
-    };
-
-//    public static Converter doubleArrayC = new Converter() {
-//        @Override
-//        public byte[] convert(byte[] value, Mapper.Context context) {
-//            String string = Bytes.toString(value);
-//            try {
-//                List<Double> doubles = new ArrayList<Double>();
-//                if (string.startsWith("[")) {
-//                    string = string.replaceFirst("\\[", "").replaceFirst("\\]", "");
-//                    for (String dStr : string.split(",")) {
-//                        doubles.add(Double.valueOf(dStr.trim()));
-//                    }
-//                } else if (string.startsWith("{")) {
-//                    NavigableMap<Integer, Double> sortedMap = new TreeMap<Integer, Double>();
-//                    for (Map.Entry<String, Object> entry : ((Map<String, Object>) mapper.readValue(string, Map.class)).entrySet()) {
-//                        sortedMap.put(Integer.valueOf(entry.getKey()), Double.valueOf(entry.getValue().toString()));
-//                    }
-//                    doubles.addAll(sortedMap.values());
-//                }
-//                PhoenixArray phoenixArray = PArrayDataType.instantiatePhoenixArray(PDataType.DOUBLE, doubles.toArray());
-//                return PDataType.DOUBLE_ARRAY.toBytes(phoenixArray);
-//            } catch (Exception e) {
-//                System.err.println("double_array_err:" + string);
-//                e.printStackTrace();
-//                context.getCounter("err", "converter.double_array.err").increment(1);
-//                return null;
-//            }
-//        }
-//    };
-
     public static Converter dateC = new Converter() {
         @Override
         public byte[] convert(byte[] value, Mapper.Context context) {
@@ -402,7 +360,6 @@ public class Converters {
                 if (!map.containsKey("rating")) {
                     context.getCounter("err", "converter.sbks_ea_rating.rating_not_set").increment(1);
                 } else {
-                    String r = map.get("rating").toString();
                     raiting = PDataType.DOUBLE.toBytes(Double.parseDouble(map.get("rating").toString()));
                 }
 

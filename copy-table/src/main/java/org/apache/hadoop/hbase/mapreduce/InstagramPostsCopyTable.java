@@ -178,8 +178,8 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
             conf.set(HBASE_ZOOKEEPER_QUORUM2, "c-sencha-s01.us-w2.aws.ccl");
             conf.set(NEW_TABLE_NAME, "ig_posts");
 
-//            Scan scan = new Scan(Bytes.toBytesBinary("\\x00\\x01-_\\x00\\x00\\x00\\x00\\x0B-\\x01\\x00_\\x7F\\xFF\\xFE\\xAF\\xE5\\xA1>w_\\x00\\x00\\x00\\x00"));
-            Scan scan = new Scan(Bytes.toBytesBinary("\\x00\\x01-_\\x00\\x00\\x00\\x00\\x0B-\\x01\\x00_\\x7F\\xFF\\xFE\\xAF\\xD0z\\x0Dg_\\x00\\x00\\x00\\x00"));
+            Scan scan = new Scan(Bytes.toBytesBinary("\\x00\\x01-_\\x00\\x00\\x00\\x00\\x0B-\\x01\\x00_\\x7F\\xFF\\xFE\\xAF\\xE5\\xA1>w_\\x00\\x00\\x00\\x00"));
+//            Scan scan = new Scan(Bytes.toBytesBinary("\\x00\\x01-_\\x00\\x00\\x00\\x00\\x0B-\\x01\\x00_\\x7F\\xFF\\xFE\\xAF\\xD0z\\x0Dg_\\x00\\x00\\x00\\x00"));
 //            Scan scan = new Scan();
             scan.setCaching(10);
             HTable htable = new HTable(conf, "instagram_posts");
@@ -202,9 +202,9 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
 //                    System.out.println(Bytes.toStringBinary(result.getRow()));
 //                    System.out.println("" + Bytes.toLong(result.getValue(D, POST_ID_PREV)) + "_" + Bytes.toLong(result.getValue(D, PROFILE_ID_PREV)));
 //                }
-                if (!r.isEmpty()) {
-                    mapper94_98.delete(rowId);
-                }
+//                if (!r.isEmpty()) {
+//                    mapper94_98.delete(rowId);
+//                }
                 System.out.println("" + Bytes.toLong(result.getValue(D, POST_ID_PREV)) + "_" + Bytes.toLong(result.getValue(D, PROFILE_ID_PREV)));
                 mapper94_98.map(new ImmutableBytesWritable(result.getRow()), result, context);
             }
@@ -375,7 +375,7 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
         public void flush(Context context) throws IOException {
             int putSize = puts.size();
             if (putSize > 0) {
-                HTableUtil.bucketRsPut(table, puts);
+//                HTableUtil.bucketRsPut(table, puts);
                 context.getCounter("hbase98", "flush").increment(1);
                 context.getCounter("hbase98", "put").increment(putSize);
                 puts.clear();
