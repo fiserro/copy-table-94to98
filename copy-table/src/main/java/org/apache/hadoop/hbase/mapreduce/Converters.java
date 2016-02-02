@@ -59,7 +59,7 @@ public class Converters {
             try {
                 return ("" + Bytes.toLong(value)).getBytes(Charset.forName("UTF-8"));
             } catch (Exception e) {
-                Bytes.toStringBinary(value);
+                System.out.println(Bytes.toStringBinary(value));
                 e.printStackTrace();
                 context.getCounter("err", "converter.long_to_string.err").increment(1);
                 return null;
@@ -73,7 +73,7 @@ public class Converters {
             try {
                 return PDataType.INTEGER.toBytes(Bytes.toInt(value));
             } catch (Exception e) {
-                Bytes.toStringBinary(value);
+                System.out.println(Bytes.toStringBinary(value));
                 e.printStackTrace();
                 context.getCounter("err", "converter.integer.err").increment(1);
                 return null;
@@ -87,7 +87,7 @@ public class Converters {
             try {
                 return PDataType.LONG.toBytes(Bytes.toLong(value));
             } catch (Exception e) {
-                Bytes.toStringBinary(value);
+                System.out.println(Bytes.toStringBinary(value));
                 e.printStackTrace();
                 context.getCounter("err", "converter.long.err").increment(1);
                 return null;
@@ -110,7 +110,7 @@ public class Converters {
                 return PDataType.DATE.toBytes(date);
 
             } catch (Exception e) {
-                Bytes.toStringBinary(value);
+                System.out.println(Bytes.toStringBinary(value));
                 e.printStackTrace();
                 context.getCounter("err", "converter.date.err").increment(1);
                 return null;
@@ -270,7 +270,7 @@ public class Converters {
                 }
 
            } catch (IOException e) {
-                Bytes.toStringBinary(value);
+                System.out.println(Bytes.toStringBinary(value));
                 e.printStackTrace();
                 context.getCounter("err", "converter.location.parse_json").increment(1);
             }
@@ -308,7 +308,7 @@ public class Converters {
                     tags.add(tagBuilder.build());
                 }
             } catch (IOException e) {
-                Bytes.toStringBinary(value);
+                System.out.println(Bytes.toStringBinary(value));
                 e.printStackTrace();
                 context.getCounter("err", "converter.user_in_photo.parse_json").increment(1);
             }
@@ -324,7 +324,7 @@ public class Converters {
                     tags.add(Entities.Hashtag.newBuilder().setText(tag).build());
                 }
             } catch (IOException e) {
-                Bytes.toStringBinary(value);
+                System.out.println(Bytes.toStringBinary(value));
                 e.printStackTrace();
                 context.getCounter("err", "converter.hashtags.parse_json").increment(1);
             }
@@ -372,7 +372,7 @@ public class Converters {
                 }
 
             } catch (IOException e) {
-                Bytes.toStringBinary(value);
+                System.out.println(Bytes.toStringBinary(value));
                 e.printStackTrace();
                 context.getCounter("err", "converter.sbks_ea_rating.parse_json").increment(1);
             }
