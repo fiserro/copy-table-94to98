@@ -375,7 +375,7 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
         public void flush(Context context) throws IOException {
             int putSize = puts.size();
             if (putSize > 0) {
-                HTableUtil.bucketRsPut(table, puts);
+//                HTableUtil.bucketRsPut(table, puts);
                 context.getCounter("hbase98", "flush").increment(1);
                 context.getCounter("hbase98", "put").increment(putSize);
                 puts.clear();
