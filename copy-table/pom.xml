@@ -8,7 +8,7 @@
   <artifactId>copy-table</artifactId>
 
   <properties>
-    <mainClass>org.apache.hadoop.hbase.mapreduce.CopyTable2</mainClass>
+    <mainClass>org.apache.hadoop.hbase.mapreduce.InstagramPostsCopyTable</mainClass>
   </properties>
 
   <dependencies>
