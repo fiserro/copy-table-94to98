@@ -357,7 +357,7 @@ public class Converters {
             byte[] raiting = null;
             try {
                 Map<String, Object> map = (Map<String, Object>) mapper.readValue(value, Map.class);
-                if (map.get("rating") != null) {
+                if (map != null && map.get("rating") != null) {
                     raiting = PDataType.DOUBLE.toBytes(Double.parseDouble(map.get("rating").toString()));
                 } else {
                     context.getCounter("err", "converter.sbks_ea_rating.rating_not_set").increment(1);
