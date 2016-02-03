@@ -36,7 +36,7 @@ public class Converters {
     }
 
     public interface EntitiesConverter {
-        byte[] convert(byte[] usersInPhoto, byte[] tags, Mapper.Context context);
+        byte[] convert(byte[] usersInPhoto, byte[] tags, String postId, Mapper.Context context);
     }
 
     public interface LocationConverter {
@@ -46,7 +46,7 @@ public class Converters {
             public byte[] id;
         }
 
-        Location convert(byte[] value, Mapper.Context context);
+        Location convert(byte[] value, String postId, Mapper.Context context);
     }
 
     public interface BiConverter {
@@ -59,7 +59,7 @@ public class Converters {
             try {
                 return ("" + Bytes.toLong(value)).getBytes(Charset.forName("UTF-8"));
             } catch (Exception e) {
-                System.out.println(Bytes.toStringBinary(value));
+                System.err.println(Bytes.toStringBinary(value));
                 e.printStackTrace();
                 context.getCounter("err", "converter.long_to_string.err").increment(1);
                 return null;
@@ -73,7 +73,7 @@ public class Converters {
             try {
                 return PDataType.INTEGER.toBytes(Bytes.toInt(value));
             } catch (Exception e) {
-                System.out.println(Bytes.toStringBinary(value));
+                System.err.println(Bytes.toStringBinary(value));
                 e.printStackTrace();
                 context.getCounter("err", "converter.integer.err").increment(1);
                 return null;
@@ -87,7 +87,7 @@ public class Converters {
             try {
                 return PDataType.LONG.toBytes(Bytes.toLong(value));
             } catch (Exception e) {
-                System.out.println(Bytes.toStringBinary(value));
+                System.err.println(Bytes.toStringBinary(value));
                 e.printStackTrace();
                 context.getCounter("err", "converter.long.err").increment(1);
                 return null;
@@ -110,7 +110,7 @@ public class Converters {
                 return PDataType.DATE.toBytes(date);
 
             } catch (Exception e) {
-                System.out.println(Bytes.toStringBinary(value));
+                System.err.println(Bytes.toStringBinary(value));
                 e.printStackTrace();
                 context.getCounter("err", "converter.date.err").increment(1);
                 return null;
@@ -237,7 +237,7 @@ public class Converters {
 
     public static LocationConverter locationConverter = new LocationConverter() {
         @Override
-        public Location convert(byte[] value, Mapper.Context context) {
+        public Location convert(byte[] value, String postId, Mapper.Context context) {
             Location location = new Location();
             if (value == null || value.length == 0)
                 return location;
@@ -270,8 +270,8 @@ public class Converters {
                 }
 
            } catch (IOException e) {
-                System.out.println(Bytes.toStringBinary(value));
-                e.printStackTrace();
+                System.err.println("POST_ID: " + postId + " => " + Bytes.toStringBinary(value));
+                System.err.println(e.getMessage());
                 context.getCounter("err", "converter.location.parse_json").increment(1);
             }
            return location;
@@ -280,7 +280,7 @@ public class Converters {
 
     public static EntitiesConverter entitiesConverter = new EntitiesConverter() {
 
-        private List<Entities.Tag> convertTag(byte[] value, Mapper.Context context) {
+        private List<Entities.Tag> convertTag(byte[] value, String postId, Mapper.Context context) {
             List<Entities.Tag> tags = new LinkedList<Entities.Tag>();
             try {
                 List<UsersInPhoto> usersInPhoto = mapper.readValue(value, new TypeReference<List<UsersInPhoto>>() {});
@@ -308,8 +308,8 @@ public class Converters {
                     tags.add(tagBuilder.build());
                 }
             } catch (IOException e) {
-                System.out.println(Bytes.toStringBinary(value));
-                e.printStackTrace();
+                System.err.println("POST_ID: " + postId + " => " + Bytes.toStringBinary(value));
+                System.err.println(e.getMessage());
                 context.getCounter("err", "converter.user_in_photo.parse_json").increment(1);
             }
             return tags;
@@ -324,7 +324,7 @@ public class Converters {
                     tags.add(Entities.Hashtag.newBuilder().setText(tag).build());
                 }
             } catch (IOException e) {
-                System.out.println(Bytes.toStringBinary(value));
+                System.err.println(Bytes.toStringBinary(value));
                 e.printStackTrace();
                 context.getCounter("err", "converter.hashtags.parse_json").increment(1);
             }
@@ -332,13 +332,13 @@ public class Converters {
         }
 
         @Override
-        public byte[] convert(byte[] usersInPhoto, byte[] tags, Mapper.Context context) {
+        public byte[] convert(byte[] usersInPhoto, byte[] tags, String postId, Mapper.Context context) {
             Entities.Builder entities = Entities.newBuilder();
 
             if (usersInPhoto == null || usersInPhoto.length == 0) {
                 context.getCounter("err", "converter.user_in_photo.not_set").increment(1);
             } else {
-                List<Entities.Tag> photoTags = convertTag(usersInPhoto, context);
+                List<Entities.Tag> photoTags = convertTag(usersInPhoto, postId, context);
                 if (photoTags.size() > 0)
                     entities.addAllTags(photoTags);
                 else
@@ -372,7 +372,7 @@ public class Converters {
                 }
 
             } catch (IOException e) {
-                System.out.println(Bytes.toStringBinary(value));
+                System.err.println(Bytes.toStringBinary(value));
                 e.printStackTrace();
                 context.getCounter("err", "converter.sbks_ea_rating.parse_json").increment(1);
             }

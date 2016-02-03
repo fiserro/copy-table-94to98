@@ -399,6 +399,8 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
                 if (id == null)
                     throw new ValueNotFound("row_id");
 
+                String postIdAsString = "" + Bytes.toLong(postId) + "_" + Bytes.toLong(profileId);
+
                 Put put = new Put(id);
 
                 putAndTrack(put, PROFILE_ID, convert(profileId, Converters.longC));
@@ -417,10 +419,10 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
                 putAndTrack(put, CAPTION_USER_ID, convert(getValue(CAPTION_USER_ID_PREV), Converters.longToStringC));
 
                 putAndTrack(put, ENTITIES, Converters.entitiesConverter.convert(getValue(USERS_IN_PHOTO_PREV),
-                        getValue(HASHTAGS_PREV), context));
+                        getValue(HASHTAGS_PREV), postIdAsString, context));
 
                 Converters.LocationConverter.Location location =
-                        Converters.locationConverter.convert(getValue(LOCATION_PREV), context);
+                        Converters.locationConverter.convert(getValue(LOCATION_PREV), postIdAsString, context);
 
                 putAndTrack(put, LOCATION_ID, location.id);
                 putAndTrack(put, LOCATION_NAME, location.name);
