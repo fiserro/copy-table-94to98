@@ -457,8 +457,8 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
                 Put put = new Put(id);
                 byte[] corruptedFields = new byte[0];
 
-                putAndTrack(put, PROFILE_ID, convert(profileId, Converters.longC));
-                putAndTrack(put, POST_ID, convert(postId, Converters.longC));
+                putAndTrack(put, PROFILE_ID, convert(profileId, Converters.longToStringC));
+                putAndTrack(put, POST_ID, convert(postId, Converters.longToStringC));
                 putAndTrack(put, CREATED_TIME, convert(getValue(CREATED_TIME), Converters.dateC));
                 putAndTrack(put, MESSAGE, getValue(MESSAGE));
                 putAndTrack(put, COMMENT_COUNT, convert(getValue(COMMENT_COUNT), Converters.integerC));
