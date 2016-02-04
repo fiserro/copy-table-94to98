@@ -28,7 +28,11 @@ public class Converters {
 
     public interface Converter {
         byte[] convert(byte[] value, Mapper.Context context);
+    }
 
+    public interface ConverterWithException extends Converter {
+        @Override
+        byte[] convert(byte[] value, Mapper.Context context) throws ConverterException;
     }
 
     public interface AttachmentConverter {
@@ -36,7 +40,7 @@ public class Converters {
     }
 
     public interface EntitiesConverter {
-        byte[] convert(byte[] usersInPhoto, byte[] tags, String postId, Mapper.Context context);
+        byte[] convert(byte[] usersInPhoto, byte[] tags, String postId, Mapper.Context context) throws ConverterException;
     }
 
     public interface LocationConverter {
@@ -120,7 +124,7 @@ public class Converters {
 
     public static AttachmentConverter attachmentsWithImageConverter = new AttachmentConverter() {
         @Override
-        public byte[] convert(byte[] contentLow, byte[] contentStandard, byte[] contentThumbnail, Mapper.Context context) {
+        public byte[] convert(byte[] contentLow, byte[] contentStandard, byte[] contentThumbnail, Mapper.Context context) throws ConverterException {
             Attachment.Image imageLow = createImage(contentLow, "low", context);
             Attachment.Image imageStandard = createImage(contentStandard, "standard", context);
             Attachment.Image imageThumbnail = createImage(contentThumbnail, "thumbnail", context);
@@ -142,7 +146,7 @@ public class Converters {
                     .build().toByteArray();
         }
 
-        private Attachment.Image createImage(byte[] json, String type, Mapper.Context context) {
+        private Attachment.Image createImage(byte[] json, String type, Mapper.Context context) throws ConverterException {
             if (json == null || json.length == 0) {
                 context.getCounter("err", "converter.image." + type + ".missing").increment(1);
                 return null;
@@ -171,8 +175,8 @@ public class Converters {
             } catch (IOException e) {
                 Bytes.toStringBinary(json);
                 e.printStackTrace();
-                context.getCounter("err", "converter.image." + type).increment(1);
-                return null;
+                context.getCounter("err", "converter.image." + type + ".parse_json").increment(1);
+                throw new ConverterException("Invalid json", Bytes.toBytes(type));
             }
         }
 
@@ -271,8 +275,9 @@ public class Converters {
 
            } catch (IOException e) {
                 System.err.println("POST_ID: " + postId + " => " + Bytes.toStringBinary(value));
-                System.err.println(e.getMessage());
+                System.err.println("LOCATION: " + e.getMessage());
                 context.getCounter("err", "converter.location.parse_json").increment(1);
+                throw new ConverterException("Invalid json", null);
             }
            return location;
         }
@@ -280,7 +285,7 @@ public class Converters {
 
     public static EntitiesConverter entitiesConverter = new EntitiesConverter() {
 
-        private List<Entities.Tag> convertTag(byte[] value, String postId, Mapper.Context context) {
+        private List<Entities.Tag> convertTag(byte[] value, String postId, Mapper.Context context) throws ConverterException {
             List<Entities.Tag> tags = new LinkedList<Entities.Tag>();
             try {
                 List<UsersInPhoto> usersInPhoto = mapper.readValue(value, new TypeReference<List<UsersInPhoto>>() {});
@@ -309,8 +314,9 @@ public class Converters {
                 }
             } catch (IOException e) {
                 System.err.println("POST_ID: " + postId + " => " + Bytes.toStringBinary(value));
-                System.err.println(e.getMessage());
+                System.err.println("User_IN_FOTO: " + e.getMessage());
                 context.getCounter("err", "converter.user_in_photo.parse_json").increment(1);
+                throw new ConverterException("Invalid json", Bytes.toBytes("user_in_photo"));
             }
             return tags;
         }
@@ -325,58 +331,77 @@ public class Converters {
                 }
             } catch (IOException e) {
                 System.err.println(Bytes.toStringBinary(value));
-                e.printStackTrace();
+                System.err.println("HasTag: " + e.getMessage());
                 context.getCounter("err", "converter.hashtags.parse_json").increment(1);
+                throw new ConverterException("Invalid json", Bytes.toBytes("tags"));
             }
             return tags;
         }
 
         @Override
-        public byte[] convert(byte[] usersInPhoto, byte[] tags, String postId, Mapper.Context context) {
+        public byte[] convert(byte[] usersInPhoto, byte[] tags, String postId, Mapper.Context context) throws ConverterException {
             Entities.Builder entities = Entities.newBuilder();
 
-            if (usersInPhoto == null || usersInPhoto.length == 0) {
-                context.getCounter("err", "converter.user_in_photo.not_set").increment(1);
-            } else {
-                List<Entities.Tag> photoTags = convertTag(usersInPhoto, postId, context);
-                if (photoTags.size() > 0)
-                    entities.addAllTags(photoTags);
-                else
-                    context.getCounter("err", "converter.user_in_photo.is_empty").increment(1);
+            int errors = 0;
+
+            try {
+                if (usersInPhoto == null || usersInPhoto.length == 0) {
+                    context.getCounter("err", "converter.user_in_photo.not_set").increment(1);
+                } else {
+                    List<Entities.Tag> photoTags = convertTag(usersInPhoto, postId, context);
+                    if (photoTags.size() > 0)
+                        entities.addAllTags(photoTags);
+                    else
+                        context.getCounter("err", "converter.user_in_photo.is_empty").increment(1);
+                }
+            } catch (ConverterException e) {
+                errors += 1;
             }
 
-            if (tags == null || tags.length == 0) {
-                context.getCounter("err", "converter.hash_tags.not_set").increment(1);
-            } else {
-                List<Entities.Hashtag> hashtags = convertHashTag(tags, context);
-                if (hashtags.size() > 0)
-                    entities.addAllHashtags(hashtags);
-                else
-                    context.getCounter("err", "converter.hash_tags.is_empty").increment(1);
+            try {
+                if (tags == null || tags.length == 0) {
+                    context.getCounter("err", "converter.hash_tags.not_set").increment(1);
+                } else {
+                    List<Entities.Hashtag> hashtags = convertHashTag(tags, context);
+                    if (hashtags.size() > 0)
+                        entities.addAllHashtags(hashtags);
+                    else
+                        context.getCounter("err", "converter.hash_tags.is_empty").increment(1);
+                }
+            } catch (ConverterException e) {
+                errors += 1;
             }
+
+            if (errors > 0)
+                throw new ConverterException("Invalid json", Bytes.toBytes("user_in_photo_hash_tags"));
 
             return entities.build().toByteArray();
         }
     };
 
-    public static Converter raitingConverter = new Converter() {
+    public static ConverterWithException ratingConverter = new ConverterWithException() {
         @Override
-        public byte[] convert(byte[] value, Mapper.Context context) {
-            byte[] raiting = null;
+        public byte[] convert(byte[] value, Mapper.Context context) throws ConverterException {
+            byte[] rating = null;
+            if (Bytes.toString(value).equals("[]")) {
+                context.getCounter("err", "converter.sbks_ea_rating.is_empty_array").increment(1);
+                return rating;
+            }
             try {
                 Map<String, Object> map = (Map<String, Object>) mapper.readValue(value, Map.class);
                 if (map != null && map.get("rating") != null) {
-                    raiting = PDataType.DOUBLE.toBytes(Double.parseDouble(map.get("rating").toString()));
+                    rating = PDataType.DOUBLE.toBytes(Double.parseDouble(map.get("rating").toString()));
                 } else {
                     context.getCounter("err", "converter.sbks_ea_rating.rating_not_set").increment(1);
                 }
 
             } catch (IOException e) {
                 System.err.println(Bytes.toStringBinary(value));
-                e.printStackTrace();
+                System.err.println("Rating: " + e.getMessage());
                 context.getCounter("err", "converter.sbks_ea_rating.parse_json").increment(1);
+                throw new ConverterException("Cannot parse rating json value", Bytes.toBytes("rating"));
             }
-            return raiting;
+            return rating;
         }
     };
 
@@ -401,5 +426,13 @@ public class Converters {
         public Double longitude;
         public String name;
         public String id;
+    }
+
+    public static class ConverterException extends RuntimeException {
+        public final byte[] fieldName;
+        public ConverterException(String message, byte[] fieldName) {
+            super(message);
+            this.fieldName = fieldName;
+        }
     }
 }

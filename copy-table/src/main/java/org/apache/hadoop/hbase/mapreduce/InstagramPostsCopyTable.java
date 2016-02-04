@@ -20,10 +20,7 @@ import org.apache98.hadoop.hbase.HBaseConfiguration;
 import org.apache98.hadoop.hbase.client.*;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
+import java.util.*;
 
 import static org.apache.hadoop.hbase.mapreduce.Statics.*;
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
@@ -31,6 +28,8 @@ import static org.apache.hadoop.hbase.util.Bytes.toBytes;
 public class InstagramPostsCopyTable extends Configured implements Tool {
 
     private static final byte[] D = toBytes("d");
+
+    private static final byte[] CORRUPTED_FIELDS = toBytes("fields");
 
     private static final byte[] PROFILE_ID = toBytes("profile_id");
     private static final byte[] PROFILE_ID_PREV = toBytes("page_id");
@@ -167,7 +166,10 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
     private static class Mapper94_98 extends TableMapper<ImmutableBytesWritable, KeyValue> {
 
         private List<org.apache98.hadoop.hbase.client.Put> puts = new ArrayList<org.apache98.hadoop.hbase.client.Put>();
+        private List<org.apache98.hadoop.hbase.client.Put> corruptedDataPuts = new ArrayList<org.apache98.hadoop.hbase.client.Put>();
         private org.apache98.hadoop.hbase.client.HTable table;
+        private org.apache98.hadoop.hbase.client.HTable corruptedDataTable;
+        private final String corruptedTableName = "ig_corrupted_posts";
         private int bucketSize;
 
         public static void main(String[] args) throws IOException, InterruptedException {
@@ -183,6 +185,7 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
 //            Scan scan = new Scan();
             scan.setCaching(10);
             HTable htable = new HTable(conf, "instagram_posts");
+//            HTable corruptedDataTable = new HTable(conf, corruptedTableName);
             ResultScanner scanner = htable.getScanner(scan);
             int i = 0;
 
@@ -209,6 +212,7 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
                 mapper94_98.map(new ImmutableBytesWritable(result.getRow()), result, context);
             }
             mapper94_98.flush(context);
+            mapper94_98.corruptedFlush(context);
             mapper94_98.cleanup(context);
             for (Counter counter : context.getCounters().values()) {
                 System.out.println(counter.getDisplayName() + ":" + counter.getValue());
@@ -235,6 +239,9 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
                 if (puts.size() >= bucketSize) {
                     flush(context);
                 }
+                if (corruptedDataPuts.size() >= bucketSize) {
+                    corruptedFlush(context);
+                }
             } catch (ValueNotFound e) {
                 context.getCounter("err", "miss_" + e.getField()).increment(1);
             }
@@ -251,6 +258,8 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
             HConnection connection = HConnectionManager.createConnection(conf98);
             table = (org.apache98.hadoop.hbase.client.HTable) connection.getTable(conf.get(NEW_TABLE_NAME));
             table.setAutoFlushTo(false);
+            corruptedDataTable = (org.apache98.hadoop.hbase.client.HTable) connection.getTable(corruptedTableName);
+            corruptedDataTable.setAutoFlushTo(false);
         }
 
 
@@ -382,6 +391,17 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
             }
         }
 
+        public void corruptedFlush(Context context) throws IOException {
+            List<Put> puts = corruptedDataPuts;
+            int putSize = puts.size();
+            if (putSize > 0) {
+//                HTableUtil.bucketRsPut(corruptedDataTable, puts);
+                context.getCounter("hbase98", "currpted_flush").increment(1);
+                context.getCounter("hbase98", "currpted_put").increment(putSize);
+                puts.clear();
+            }
+        }
+
         private class ValuesMapper {
             private final Context context;
             private final Result result;
@@ -392,9 +412,9 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
             }
 
             public Put mapToNewStructurePut() throws ValueNotFound {
-                byte[] profileId = getValue(PROFILE_ID_PREV, true);
-                byte[] postId = getValue(POST_ID_PREV, true);
-                byte[] id = Converters.idConverter.convert(profileId, postId, context);
+                final byte[] profileId = getValue(PROFILE_ID_PREV, true);
+                final byte[] postId = getValue(POST_ID_PREV, true);
+                final byte[] id = Converters.idConverter.convert(profileId, postId, context);
 
                 if (id == null)
                     throw new ValueNotFound("row_id");
@@ -402,6 +422,7 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
                 String postIdAsString = "" + Bytes.toLong(postId) + "_" + Bytes.toLong(profileId);
 
                 Put put = new Put(id);
+                byte[] corruptedFields = new byte[0];
 
                 putAndTrack(put, PROFILE_ID, convert(profileId, Converters.longC));
                 putAndTrack(put, POST_ID, convert(postId, Converters.longC));
@@ -412,24 +433,51 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
                 putAndTrack(put, LINK, getValue(LINK));
                 putAndTrack(put, TYPE, getValue(TYPE_PREV));
                 putAndTrack(put, PROFILES_FANS_COUNT, convert(getValue(PROFILES_FANS_COUNT_PREV), Converters.integerC));
-                putAndTrack(put, RATING, convert(getValue(RATING_PREV), Converters.raitingConverter));
                 putAndTrack(put, SBKS_DOWNLOAD, convert(getValue(SBKS_DOWNLOAD_PREV), Converters.dateC));
                 putAndTrack(put, FILTER, getValue(FILTER_PREV));
                 putAndTrack(put, CAPTION_ID, convert(getValue(CAPTION_ID_PREV), Converters.longToStringC));
                 putAndTrack(put, CAPTION_USER_ID, convert(getValue(CAPTION_USER_ID_PREV), Converters.longToStringC));
 
-                putAndTrack(put, ENTITIES, Converters.entitiesConverter.convert(getValue(USERS_IN_PHOTO_PREV),
-                        getValue(HASHTAGS_PREV), postIdAsString, context));
+                try {
+                    putAndTrack(put, RATING, convert(getValue(RATING_PREV), Converters.ratingConverter));
+                } catch (Converters.ConverterException e) {
+                    byte[] field = Bytes.add(RATING_PREV, Bytes.toBytes("."), e.fieldName);
+                    corruptedFields = Bytes.add(corruptedFields, Bytes.toBytes(","), field);
+                }
+                try {
+                    putAndTrack(put, ENTITIES, Converters.entitiesConverter.convert(getValue(USERS_IN_PHOTO_PREV),
+                            getValue(HASHTAGS_PREV), postIdAsString, context));
+                } catch (Converters.ConverterException e) {
+                    byte[] field = Bytes.add(ENTITIES, Bytes.toBytes("."), e.fieldName);
+                    corruptedFields = Bytes.add(corruptedFields, Bytes.toBytes(","), field);
+                }
 
-                Converters.LocationConverter.Location location =
-                        Converters.locationConverter.convert(getValue(LOCATION_PREV), postIdAsString, context);
+                Converters.LocationConverter.Location location = new Converters.LocationConverter.Location();
+                try {
+                    location = Converters.locationConverter.convert(getValue(LOCATION_PREV), postIdAsString, context);
+                } catch (Converters.ConverterException e) {
+                    corruptedFields = Bytes.add(corruptedFields, Bytes.toBytes(","), LOCATION_PREV);
+                }
 
                 putAndTrack(put, LOCATION_ID, location.id);
                 putAndTrack(put, LOCATION_NAME, location.name);
                 putAndTrack(put, LOCATION_COORDINATES, location.coordinates);
 
-                putAndTrack(put, IMAGES_ATTACHMENT, Converters.attachmentsWithImageConverter.convert(getValue(IMAGE_LOW),
-                        getValue(IMAGE_STANDARD), getValue(IMAGE_THUMBNAIL), context));
+                try {
+                    putAndTrack(put, IMAGES_ATTACHMENT, Converters.attachmentsWithImageConverter.convert(getValue(IMAGE_LOW),
+                            getValue(IMAGE_STANDARD), getValue(IMAGE_THUMBNAIL), context));
+                } catch (Converters.ConverterException e) {
+                    byte[] field = Bytes.add(IMAGES_ATTACHMENT, Bytes.toBytes("."), e.fieldName);
+                    corruptedFields = Bytes.add(corruptedFields, Bytes.toBytes(","), field);
+                }
+
+                if (corruptedFields.length > 0) {
+                    Put corrupted = new Put(id);
+                    corrupted.add(D, POST_ID, postId);
+                    corrupted.add(D, PROFILE_ID, profileId);
+                    corrupted.add(D, CORRUPTED_FIELDS, corruptedFields);
+                    corruptedDataPuts.add(corrupted);
+                }
 
                 return put;
             }
