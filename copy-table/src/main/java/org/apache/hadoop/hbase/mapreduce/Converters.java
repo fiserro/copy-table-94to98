@@ -200,36 +200,27 @@ public class Converters {
     };
 
     public static BiConverter idConverter = new BiConverter(){
-
-        private static final int RK_LEN = 18;
-        private static final int PROFILE_ID_OFFSET = 2;
-        private static final int POST_ID_OFFSET = 10;
-
         private CRC32 crc32 = new CRC32();
 
         @Override
         public byte[] convert(byte[] profileId, byte[] postId, Mapper.Context context) {
             try {
-                Long profileIdL = Bytes.toLong(profileId);
-                Long postIdL = Bytes.toLong(postId);
+                byte[] profileIdFromString = Bytes.toBytes(String.valueOf(Bytes.toLong(profileId)));
+                byte[] postIdFromString = Bytes.toBytes(String.valueOf(Bytes.toLong(postId)));
 
-                byte[] bytes = new byte[RK_LEN];
+                byte[] bytes = new byte[Bytes.SIZEOF_SHORT + profileIdFromString.length +
+                        Bytes.SIZEOF_BYTE + postIdFromString.length];
 
                 ByteBuffer bb = ByteBuffer.wrap(bytes);
-                bb.putLong(PROFILE_ID_OFFSET, profileIdL);
-                bb.putLong(POST_ID_OFFSET, postIdL);
-                bb.position(0);
-                bb.get(bytes);
-
                 synchronized (crc32) {
-                    crc32.update(bytes, PROFILE_ID_OFFSET, Bytes.SIZEOF_LONG);
+                    crc32.update(profileIdFromString);
                     short crc = (short) crc32.getValue();
                     crc32.reset();
-                    bb.position(0);
-                    bb.putShort(0, crc);
+                    bb.putShort(crc);
                 }
-                bb.position(0);
-                bb.get(bytes);
+                bb.put(profileIdFromString);
+                bb.put((byte) 0);
+                bb.put(postIdFromString);
                 return bytes;
             } catch (Exception e) {
                 e.printStackTrace();
