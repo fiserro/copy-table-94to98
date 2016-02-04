@@ -274,8 +274,9 @@ public class Converters {
                 }
 
            } catch (IOException e) {
-                System.err.println("POST_ID: " + postId + " => " + Bytes.toStringBinary(value));
-                System.err.println("LOCATION: " + e.getMessage());
+                System.err.println("POST_ID: " + postId + " => LOCATION => " + e.getMessage());
+//                System.err.println("POST_ID: " + postId + " => " + Bytes.toStringBinary(value));
+//                System.err.println("LOCATION: " + e.getMessage());
                 context.getCounter("err", "converter.location.parse_json").increment(1);
                 throw new ConverterException("Invalid json", null);
             }
@@ -313,8 +314,9 @@ public class Converters {
                     tags.add(tagBuilder.build());
                 }
             } catch (IOException e) {
-                System.err.println("POST_ID: " + postId + " => " + Bytes.toStringBinary(value));
-                System.err.println("User_IN_FOTO: " + e.getMessage());
+                System.err.println("POST_ID: " + postId + " => USER_IN_PHOTO => " + e.getMessage());
+//                System.err.println("POST_ID: " + postId + " => " + Bytes.toStringBinary(value));
+//                System.err.println("User_IN_FOTO: " + e.getMessage());
                 context.getCounter("err", "converter.user_in_photo.parse_json").increment(1);
                 throw new ConverterException("Invalid json", Bytes.toBytes("user_in_photo"));
             }
@@ -330,7 +332,7 @@ public class Converters {
                     tags.add(Entities.Hashtag.newBuilder().setText(tag).build());
                 }
             } catch (IOException e) {
-                System.err.println(Bytes.toStringBinary(value));
+//                System.err.println(Bytes.toStringBinary(value));
                 System.err.println("HasTag: " + e.getMessage());
                 context.getCounter("err", "converter.hashtags.parse_json").increment(1);
                 throw new ConverterException("Invalid json", Bytes.toBytes("tags"));
@@ -396,7 +398,7 @@ public class Converters {
                 }
 
             } catch (IOException e) {
-                System.err.println(Bytes.toStringBinary(value));
+//                System.err.println(Bytes.toStringBinary(value));
                 System.err.println("Rating: " + e.getMessage());
                 context.getCounter("err", "converter.sbks_ea_rating.parse_json").increment(1);
                 throw new ConverterException("Cannot parse rating json value", Bytes.toBytes("rating"));
