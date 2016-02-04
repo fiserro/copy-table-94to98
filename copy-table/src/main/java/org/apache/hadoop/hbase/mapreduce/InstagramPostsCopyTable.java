@@ -20,7 +20,10 @@ import org.apache98.hadoop.hbase.HBaseConfiguration;
 import org.apache98.hadoop.hbase.client.*;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 import static org.apache.hadoop.hbase.mapreduce.Statics.*;
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
@@ -185,12 +188,16 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
 //            Scan scan = new Scan();
             scan.setCaching(10);
             HTable htable = new HTable(conf, "instagram_posts");
-//            HTable corruptedDataTable = new HTable(conf, corruptedTableName);
             ResultScanner scanner = htable.getScanner(scan);
             int i = 0;
 
             FakeContext context = mapper94_98.createFakeContext(conf);
             mapper94_98.setup(context);
+            try {
+                mapper94_98.scan();
+            } catch (Throwable e) {
+                e.printStackTrace();
+            }
             for (Result result : scanner) {
                 if (++i > 1) {
                     break;
@@ -239,7 +246,7 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
                 if (puts.size() >= bucketSize) {
                     flush(context);
                 }
-                if (corruptedDataPuts.size() >= bucketSize) {
+                if (corruptedDataPuts.size() >= 1000) {
                     corruptedFlush(context);
                 }
             } catch (ValueNotFound e) {
@@ -247,12 +254,14 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
             }
         }
 
+        private org.apache98.hadoop.conf.Configuration conf98;
+
         @Override
         protected void setup(Mapper.Context context) throws IOException, InterruptedException {
             super.setup(context);
             Configuration conf = context.getConfiguration();
             bucketSize = conf.getInt(BUCKET_SIZE, 4000);
-            org.apache98.hadoop.conf.Configuration conf98 = HBaseConfiguration.create();
+            conf98 = HBaseConfiguration.create();
             // conf98.set("hbase.client.write.buffer", "20971520");
             conf98.set(HBASE_ZOOKEEPER_QUORUM, conf.get(HBASE_ZOOKEEPER_QUORUM2));
             HConnection connection = HConnectionManager.createConnection(conf98);
@@ -260,6 +269,14 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
             table.setAutoFlushTo(false);
             corruptedDataTable = (org.apache98.hadoop.hbase.client.HTable) connection.getTable(corruptedTableName);
             corruptedDataTable.setAutoFlushTo(false);
+        }
+
+        @Override
+        protected void cleanup(Context context) throws IOException, InterruptedException {
+            flush(context);
+            corruptedFlush(context);
+            context.getCounter("hbase98", "flush_cleanup").increment(1);
+            super.cleanup(context);
         }
 
 
@@ -270,6 +287,22 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
             } catch (IOException e) {
                 e.printStackTrace();
                 return null;
+            }
+        }
+
+        public void scan() throws IOException, Throwable {
+            org.apache98.hadoop.hbase.client.Scan scan = new org.apache98.hadoop.hbase.client.Scan();
+            scan.setCaching(10);
+            scan.addFamily(D);
+            org.apache98.hadoop.hbase.client.ResultScanner scanner = corruptedDataTable.getScanner(scan);
+//            AggregationClient ag = new AggregationClient(conf98);
+//            long count = ag.rowCount(corruptedDataTable, null, scan);
+            int i = 0;
+
+            for (org.apache98.hadoop.hbase.client.Result result : scanner) {
+                if (++i > 1) {
+                    break;
+                }
             }
         }
 
@@ -395,7 +428,7 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
             List<Put> puts = corruptedDataPuts;
             int putSize = puts.size();
             if (putSize > 0) {
-//                HTableUtil.bucketRsPut(corruptedDataTable, puts);
+                HTableUtil.bucketRsPut(corruptedDataTable, puts);
                 context.getCounter("hbase98", "currpted_flush").increment(1);
                 context.getCounter("hbase98", "currpted_put").increment(putSize);
                 puts.clear();
