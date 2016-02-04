@@ -442,21 +442,21 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
                     putAndTrack(put, RATING, convert(getValue(RATING_PREV), Converters.ratingConverter));
                 } catch (Converters.ConverterException e) {
                     byte[] field = Bytes.add(RATING_PREV, Bytes.toBytes("."), e.fieldName);
-                    corruptedFields = Bytes.add(corruptedFields, Bytes.toBytes(","), field);
+                    corruptedFields = corruptedFields.length > 0 ? Bytes.add(corruptedFields, Bytes.toBytes(","), field) : field;
                 }
                 try {
                     putAndTrack(put, ENTITIES, Converters.entitiesConverter.convert(getValue(USERS_IN_PHOTO_PREV),
                             getValue(HASHTAGS_PREV), postIdAsString, context));
                 } catch (Converters.ConverterException e) {
                     byte[] field = Bytes.add(ENTITIES, Bytes.toBytes("."), e.fieldName);
-                    corruptedFields = Bytes.add(corruptedFields, Bytes.toBytes(","), field);
+                    corruptedFields = corruptedFields.length > 0 ? Bytes.add(corruptedFields, Bytes.toBytes(","), field) : field;
                 }
 
                 Converters.LocationConverter.Location location = new Converters.LocationConverter.Location();
                 try {
                     location = Converters.locationConverter.convert(getValue(LOCATION_PREV), postIdAsString, context);
                 } catch (Converters.ConverterException e) {
-                    corruptedFields = Bytes.add(corruptedFields, Bytes.toBytes(","), LOCATION_PREV);
+                    corruptedFields = corruptedFields.length > 0 ? Bytes.add(corruptedFields, Bytes.toBytes(","), LOCATION_PREV) : LOCATION_PREV;
                 }
 
                 putAndTrack(put, LOCATION_ID, location.id);
@@ -468,7 +468,7 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
                             getValue(IMAGE_STANDARD), getValue(IMAGE_THUMBNAIL), context));
                 } catch (Converters.ConverterException e) {
                     byte[] field = Bytes.add(IMAGES_ATTACHMENT, Bytes.toBytes("."), e.fieldName);
-                    corruptedFields = Bytes.add(corruptedFields, Bytes.toBytes(","), field);
+                    corruptedFields = corruptedFields.length > 0 ? Bytes.add(corruptedFields, Bytes.toBytes(","), field) : field;
                 }
 
                 if (corruptedFields.length > 0) {
@@ -476,6 +476,7 @@ public class InstagramPostsCopyTable extends Configured implements Tool {
                     corrupted.add(D, POST_ID, postId);
                     corrupted.add(D, PROFILE_ID, profileId);
                     corrupted.add(D, CORRUPTED_FIELDS, corruptedFields);
+                    corrupted.add(D, CREATED_TIME, getValue(CREATED_TIME));
                     corruptedDataPuts.add(corrupted);
                 }
 
