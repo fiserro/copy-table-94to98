@@ -211,13 +211,12 @@ public class Converters {
                 byte[] bytes = new byte[Bytes.SIZEOF_SHORT + profileIdFromString.length +
                         Bytes.SIZEOF_BYTE + postIdFromString.length];
 
+                crc32.update(profileIdFromString);
+                short crc = (short) crc32.getValue();
+                crc32.reset();
+
                 ByteBuffer bb = ByteBuffer.wrap(bytes);
-                synchronized (crc32) {
-                    crc32.update(profileIdFromString);
-                    short crc = (short) crc32.getValue();
-                    crc32.reset();
-                    bb.putShort(crc);
-                }
+                bb.putShort(crc);
                 bb.put(profileIdFromString);
                 bb.put((byte) 0);
                 bb.put(postIdFromString);
