@@ -77,14 +77,14 @@ public class CopyTable2 extends Configured implements Tool {
 		String jobName = NAME + "_" + tableName;
 
 		if (startRow != null) {
-			scan.setStartRow(Bytes.toBytes(startRow));
+			scan.setStartRow(Bytes.toBytesBinary(startRow));
 			jobName += ("_" + startRow);
 		} else {
 			jobName += "_firstRow";
 		}
 
 		if (stopRow != null) {
-			scan.setStopRow(Bytes.toBytes(stopRow));
+			scan.setStopRow(Bytes.toBytesBinary(stopRow));
 			jobName += ("-" + stopRow);
 		} else {
 			jobName += "-lastRow";
