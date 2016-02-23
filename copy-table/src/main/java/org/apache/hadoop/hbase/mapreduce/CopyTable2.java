@@ -4,7 +4,9 @@ import static org.apache.hadoop.hbase.util.Bytes.toBytes;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.zip.CRC32;
 
@@ -19,14 +21,12 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.util.GenericOptionsParser;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache98.hadoop.hbase.HBaseConfiguration;
-import org.apache98.hadoop.hbase.client.Durability;
-import org.apache98.hadoop.hbase.client.HConnectionManager;
-import org.apache98.hadoop.hbase.client.HTableInterface;
-import org.apache98.hadoop.hbase.client.Put;
+import org.apache98.hadoop.hbase.client.*;
 
 /**
  * Tool used to copy a table to another one which can be on a different setup.
@@ -57,7 +57,7 @@ public class CopyTable2 extends Configured implements Tool {
 
 	/**
 	 * Sets up the actual job.
-	 * 
+	 *
 	 * @param conf
 	 *            The current configuration.
 	 * @param args
@@ -66,8 +66,7 @@ public class CopyTable2 extends Configured implements Tool {
 	 * @throws IOException
 	 *             When setting up the job fails.
 	 */
-	public static Job createSubmittableJob(Configuration conf, String[] args)
-			throws IOException {
+	public static Job createSubmittableJob(Configuration conf, String[] args) throws IOException {
 		if (!doCommandLine(args)) {
 			return null;
 		}
@@ -141,7 +140,7 @@ public class CopyTable2 extends Configured implements Tool {
 
 	/**
 	 * Main entry point.
-	 * 
+	 *
 	 * @param args
 	 *            The command line parameters.
 	 * @throws Exception
@@ -327,21 +326,31 @@ public class CopyTable2 extends Configured implements Tool {
 	private static class Mapper94_98 extends TableMapper<Writable, Writable> {
 
 		// private static final byte[] _D = Bytes.toBytes("d");
-		private HTableInterface table;
+		private HTable table;
 
 		private int saltBytes;
 		int offset;
 		private CRC32 crc = new CRC32();
+		private List<Put> puts = new ArrayList<Put>();
 
 		@Override
-		protected void map(ImmutableBytesWritable key, Result value, Context context) throws IOException,
-				InterruptedException {
+		protected void cleanup(
+				Mapper<ImmutableBytesWritable, Result, Writable, Writable>.Context context) throws IOException, InterruptedException {
+			super.cleanup(context);
+			flush();
+		}
+
+		@Override
+		protected void map(ImmutableBytesWritable key, Result value, Context context) throws IOException, InterruptedException {
 			Put put = new Put(getRow(key));
 			for (KeyValue kv : value.list()) {
 				put.add(kv.getFamily(), kv.getQualifier(), kv.getTimestamp(), kv.getValue());
 			}
 			put.setDurability(Durability.SKIP_WAL);
-			table.put(put);
+			puts.add(put);
+			if (puts.size() > 10000) {
+				flush();
+			}
 			context.getCounter("hbase98", "put").increment(1);
 		}
 
@@ -352,10 +361,15 @@ public class CopyTable2 extends Configured implements Tool {
 			this.saltBytes = conf.getInt(SALT_BYTES, -1);
 			this.offset = Bytes.SIZEOF_LONG - this.saltBytes;
 			org.apache98.hadoop.conf.Configuration conf98 = HBaseConfiguration.create();
-			conf98.set("hbase.client.write.buffer", "20971520");
+			// conf98.set("hbase.client.write.buffer", "20971520");
 			conf98.set(HBASE_ZOOKEEPER_QUORUM, conf.get(HBASE_ZOOKEEPER_QUORUM2));
-			table = HConnectionManager.createConnection(conf98).getTable(conf.get(NEW_TABLE_NAME));
-			table.setAutoFlushTo(false);
+			table = (HTable) HConnectionManager.createConnection(conf98).getTable(conf.get(NEW_TABLE_NAME));
+			// table.setAutoFlushTo(false);
+		}
+
+		private void flush() throws IOException {
+			HTableUtil.bucketRsPut(table, puts);
+			puts.clear();
 		}
 
 		private byte[] getRow(ImmutableBytesWritable key) {
