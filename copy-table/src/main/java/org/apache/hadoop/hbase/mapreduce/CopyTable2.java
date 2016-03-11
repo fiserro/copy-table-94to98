@@ -2,6 +2,7 @@ package org.apache.hadoop.hbase.mapreduce;
 
 import static org.apache.hadoop.hbase.mapreduce.Statics.*;
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
+import static org.apache.hadoop.hbase.util.Bytes.toBytesBinary;
 
 import java.io.IOException;
 import java.text.ParseException;
@@ -13,6 +14,8 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.client.Get;
+import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
@@ -28,10 +31,7 @@ import org.apache.phoenix.schema.PArrayDataType;
 import org.apache.phoenix.schema.PDataType;
 import org.apache.phoenix.schema.PhoenixArray;
 import org.apache98.hadoop.hbase.HBaseConfiguration;
-import org.apache98.hadoop.hbase.client.HConnection;
-import org.apache98.hadoop.hbase.client.HConnectionManager;
-import org.apache98.hadoop.hbase.client.HTableUtil;
-import org.apache98.hadoop.hbase.client.Put;
+import org.apache98.hadoop.hbase.client.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -251,7 +251,7 @@ public class CopyTable2 extends Configured implements Tool {
 		return job.waitForCompletion(true) ? 0 : 1;
 	}
 
-	private static class Mapper94_98 extends TableMapper<ImmutableBytesWritable, KeyValue> {
+	public static class Mapper94_98 extends TableMapper<ImmutableBytesWritable, KeyValue> {
 
 		private static final byte[] OBJECT_OBJECT = toBytes("[object Object]");
 		private static final byte[] EMPTY_ARRAY = toBytes("[]");
@@ -262,6 +262,23 @@ public class CopyTable2 extends Configured implements Tool {
 		private static final String SKIP_ATTR = "%skip_cpr%";
 
 		private static final byte[] SKIP_ATTR_VAL = new byte[] { 1 };
+
+		public static void main(String[] args) throws IOException, InterruptedException {
+			Mapper94_98 mapper = new Mapper94_98();
+			Configuration conf = new Configuration();
+			conf.set("hbase.zookeeper.quorum", "zookeeper1");
+			HTable table = new HTable(conf, "fb_posts");
+			// ResultScanner scanner = table
+			// .getScanner(new Scan(toBytes("77_\\x00\\x00\\x84\\xF0xNX1_\\x7F\\xFC\\xB8\\x97\\xDE~\\xF6\\x9E\n")));
+			// for (Result result : scanner) {
+			// mapper.map(new ImmutableBytesWritable(result.getRow()), result, null);
+			// break;
+			// }
+			Result result = table.get(new Get(toBytesBinary("77_\\x00\\x00\\x84\\xF0xNX1_\\x7F\\xFC\\xB8\\x97\\xDE~\\xF6\\x9E")));
+			mapper.map(new ImmutableBytesWritable(result.getRow()), result, null);
+
+			table.close();
+		}
 
 		private org.apache98.hadoop.hbase.client.HTable table;
 
@@ -424,15 +441,16 @@ public class CopyTable2 extends Configured implements Tool {
 
 			Put put = new Put(id);
 			put.setAttribute(SKIP_ATTR, SKIP_ATTR_VAL);
-			put(result, CREATED_TIME, put, D, CREATED_TIME, dateC, context);
-			if (!put.has(D, CREATED_TIME)) {
-				return;
-			}
-			put(result, USER_ID, put, D, AUTHOR_ID, null, context);
-			put(result, PAGE_ID, put, D, PROFILE_ID, null, context);
-			put(result, SBKS_EA_RESPONSE_TIME, put, D, SBKS_RESPONDED_RESPONSE_TIME, longC, context);
-			put(result, SBKS_EA_ADMIN_COMMENT_ID, put, D, SBKS_RESPONDED_RESPONSE_ID, null, context);
-			put(result, SBKS_EA_IS_ADMIN_POST, put, D, FACEBOOK_IS_ADMIN_POST, booleanC, context);
+			put.setDurability(Durability.SKIP_WAL);
+			// put(result, CREATED_TIME, put, D, CREATED_TIME, dateC, context);
+			// if (!put.has(D, CREATED_TIME)) {
+			// return;
+			// }
+			// put(result, USER_ID, put, D, AUTHOR_ID, null, context);
+			// put(result, PAGE_ID, put, D, PROFILE_ID, null, context);
+			// put(result, SBKS_EA_RESPONSE_TIME, put, D, SBKS_RESPONDED_RESPONSE_TIME, longC, context);
+			// put(result, SBKS_EA_ADMIN_COMMENT_ID, put, D, SBKS_RESPONDED_RESPONSE_ID, null, context);
+			// put(result, SBKS_EA_IS_ADMIN_POST, put, D, FACEBOOK_IS_ADMIN_POST, booleanC, context);
 
 			NavigableMap<byte[], byte[]> familyMap = result.getFamilyMap(I);
 			if (familyMap != null) {
@@ -453,11 +471,11 @@ public class CopyTable2 extends Configured implements Tool {
 					}
 
 					if (SIMPLE_FLOATS.contains(qualifier)) {
-						put(put, I, qualifier, value, floatC, context);
+						// put(put, I, qualifier, value, floatC, context);
 					} else if (SIMPLE_INTS.contains(qualifier)) {
-						put(put, I, qualifier, value, integerC, context);
+						// put(put, I, qualifier, value, integerC, context);
 					} else if (ARRAY_DOUBLES.contains(qualifier)) {
-						put(put, I, qualifier, value, doubleArrayC, context);
+						// put(put, I, qualifier, value, doubleArrayC, context);
 					} else if (NESTED_INTS.contains(qualifier)) {
 						try {
 							Object object = mapper.readValue(value, Object.class);
@@ -480,7 +498,7 @@ public class CopyTable2 extends Configured implements Tool {
 									System.out.println(string);
 									continue;
 								}
-								put(put, D, getQBytes(qualifier, entry2.getKey()), PDataType.INTEGER.toBytes(integer), context);
+								put(put, I, getQBytes(qualifier, entry2.getKey()), PDataType.INTEGER.toBytes(integer), context);
 							}
 						} catch (Exception e) {
 							e.printStackTrace();
@@ -489,7 +507,9 @@ public class CopyTable2 extends Configured implements Tool {
 					}
 				}
 			}
-			puts.add(put);
+			if (put.size() > 0) {
+				puts.add(put);
+			}
 			if (puts.size() >= bucketSize) {
 				flush(context);
 			}
