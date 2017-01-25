@@ -27,6 +27,7 @@ import java.util.*;
 
 import static org.apache.hadoop.hbase.mapreduce.Statics.*;
 import static org.apache.hadoop.hbase.util.Bytes.*;
+import static org.apache.phoenix.schema.PDataType.*;
 import static org.apache.phoenix.schema.PDataType.DATE;
 import static org.apache.phoenix.schema.PDataType.INTEGER;
 
@@ -210,58 +211,83 @@ public class CopyTable2 extends Configured implements Tool {
 		@Override
 		protected void map(ImmutableBytesWritable key, Result result, Context context) throws IOException, InterruptedException {
 
-			byte[] idBytes = result.getValue(E, ID);
-			if (idBytes == null) {
-				Get get = new Get(result.getRow());
-				get.addColumn(E, ID);
-				context.getCounter("custom", "reload missing id").increment(1);
-				idBytes = inputTable.get(get).getValue(E, ID);
+			try {
+				byte[] idBytes = result.getValue(E, ID);
 				if (idBytes == null) {
-					context.getCounter("custom", "missed id").increment(1);
-					return;
+					Get get = new Get(result.getRow());
+					get.addColumn(E, ID);
+					context.getCounter("custom", "reload missing id").increment(1);
+					idBytes = inputTable.get(get).getValue(E, ID);
+					if (idBytes == null) {
+						context.getCounter("custom", "missed id").increment(1);
+						return;
+					}
 				}
-			}
-			long id = Long.valueOf(Bytes.toString(idBytes));
-			idBytes = toBytes(rtCircShift(id, 42));
+				long id = Long.valueOf(Bytes.toString(idBytes));
+				idBytes = toBytes(rtCircShift(id, 42));
 
-			Records data = new Records();
-			KeyValue[] keyValues = result.raw();
-			for (KeyValue kv : keyValues) {
-				if (kv.getQualifierLength() < 6)
-					continue;
-				byte[] qualifier = kv.getQualifier();
-				int tms = getTms(qualifier);
-				if (tms > 1446336000) {
-					context.getCounter("custom", "skip time").increment(1);
-					continue;
+				Records data = new Records();
+				KeyValue[] keyValues = result.raw();
+				for (KeyValue kv : keyValues) {
+					try {
+						if (kv.getQualifierLength() < 6)
+							continue;
+						byte[] qualifier = kv.getQualifier();
+						int tms = getTms(qualifier);
+						if (tms > 1446336000) {
+							context.getCounter("custom", "skip time").increment(1);
+							continue;
+						}
+						byte[] value = kv.getValue();
+						switch ((char)qualifier[0]) {
+							case '1':
+								data.getOrCreate(tms, idBytes).add(D, COMMENT_COUNT, convertInt(value, context));
+								break;
+							case '2':
+								data.getOrCreate(tms, idBytes).add(D, SHARE_COUNT, convertInt(value, context));
+								break;
+							case '3':
+								data.getOrCreate(tms, idBytes).add(D, LIKE_COUNT, convertInt(value, context));
+								break;
+							case '4':
+								data.getOrCreate(tms, idBytes).add(D, INTERACTION_COUNT, convertInt(value, context));
+								continue;
+							case '5':
+								data.getOrCreate(tms, idBytes).add(D, ER, convertDouble(value, context));
+								break;
+							case 'i':
+								continue;
+							default:
+								continue;
+						}
+					} catch (Exception e) {
+						context.getCounter("custom", "err_kv " + e.getMessage()).increment(1);
+					}
 				}
-				byte[] value = kv.getValue();
-				switch ((char)qualifier[0]) {
-					case '1':
-						data.getOrCreate(tms, idBytes).add(D, COMMENT_COUNT, INTEGER.toBytes(toInt(value)));
-						break;
-					case '2':
-						data.getOrCreate(tms, idBytes).add(D, SHARE_COUNT, INTEGER.toBytes(toInt(value)));
-						break;
-					case '3':
-						data.getOrCreate(tms, idBytes).add(D, LIKE_COUNT, INTEGER.toBytes(toInt(value)));
-						break;
-					case '4':
-						data.getOrCreate(tms, idBytes).add(D, INTERACTION_COUNT, INTEGER.toBytes(toInt(value)));
-						continue;
-					case '5':
-						data.getOrCreate(tms, idBytes).add(D, ER, PDataType.DOUBLE.toBytes((double)Bytes.toFloat(value)));
-						break;
-					case 'i':
-						continue;
-					default:
-						continue;
-				}
-			}
 
-			puts.addAll(data.values());
-			if (puts.size() >= bucketSize)
-				flush(context);
+				puts.addAll(data.values());
+				if (puts.size() >= bucketSize)
+					flush(context);
+
+			} catch (Exception e) {
+				context.getCounter("custom", "err_result " + e.getMessage()).increment(1);
+			}
+		}
+
+		private byte[] convertDouble(byte[] value, Context context) {
+			if (value.length != 4) {
+				context.getCounter("custom", "not 4B value").increment(1);
+				return new byte[0];
+			}
+			return DOUBLE.toBytes((double) toFloat(value));
+		}
+
+		private byte[] convertInt(byte[] value, Context context) {
+			if (value.length != 4) {
+				context.getCounter("custom", "not 4B value").increment(1);
+				return new byte[0];
+			}
+			return INTEGER.toBytes(toInt(value));
 		}
 
 		private int getTms(byte[] column) {
