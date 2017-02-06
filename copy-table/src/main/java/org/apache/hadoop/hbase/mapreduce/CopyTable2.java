@@ -1,13 +1,15 @@
 package org.apache.hadoop.hbase.mapreduce;
 
+import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.KeyValue;
-import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.filter.CompareFilter;
+import org.apache.hadoop.hbase.filter.SingleColumnValueFilter;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.mapred.JobConf;
@@ -23,13 +25,12 @@ import org.apache98.hadoop.hbase.client.HTableUtil;
 import org.apache98.hadoop.hbase.client.Put;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.*;
+import java.util.zip.CRC32;
 
 import static org.apache.hadoop.hbase.mapreduce.Statics.*;
 import static org.apache.hadoop.hbase.util.Bytes.*;
-import static org.apache.phoenix.schema.PDataType.*;
-import static org.apache.phoenix.schema.PDataType.DATE;
-import static org.apache.phoenix.schema.PDataType.INTEGER;
 
 /**
  * Tool used to copy a table to another one which can be on a different setup.
@@ -38,8 +39,9 @@ import static org.apache.phoenix.schema.PDataType.INTEGER;
  */
 public class CopyTable2 extends Configured implements Tool {
 
-	private static final byte[] E = toBytes("e");
-	private static final byte[] ID = toBytes("id");
+	private static final byte[] D = toBytes("d");
+	private static final byte[] TYPE = toBytes("type");
+
 	/**
 	 * Sets up the actual job.
 	 *
@@ -83,9 +85,9 @@ public class CopyTable2 extends Configured implements Tool {
 		} else {
 			jobName += "-lastRow";
 		}
-//		scan.setCaching(1);
-		scan.setBatch(bucketSize);
-		scan.addFamily(E);
+		scan.setFilter(new SingleColumnValueFilter(D, TYPE, CompareFilter.CompareOp.EQUAL, Bytes.toBytes("c")));
+
+		scan.setCaching(1000);
 
 		Job job = new Job(conf, jobName);
 		job.setJarByClass(CopyTable2.class);
@@ -139,21 +141,33 @@ public class CopyTable2 extends Configured implements Tool {
 
 	private static class Mapper94_98 extends TableMapper<ImmutableBytesWritable, KeyValue> {
 
-		private static final byte[] D = toBytes("d");
-		private static final byte[] ER = toBytes("er");
-		private static final byte[] LIKE_COUNT = toBytes("like_count");
-		private static final byte[] COMMENT_COUNT = toBytes("comment_count");
-		private static final byte[] SHARE_COUNT = toBytes("share_count");
-		private static final byte[] INTERACTION_COUNT = toBytes("interaction_count");
+		private static final byte[] ID_ORIG = toBytes("id_orig");
+		private static final byte[] PAGE_ID = toBytes("page_id");
+		private static final byte[] POST_ID = toBytes("post_id");
+		private static final byte[] USER_ID = toBytes("user_id");
+		private static final byte[] AUTHOR_ID = toBytes("author_id");
+		private static final byte[] MESSAGE = toBytes("message");
+		private static final byte[] CREATED_TIME = toBytes("created_time");
+
 
 		public static void main(String[] args) throws IOException, InterruptedException {
 
 			Mapper94_98 mapper94_98 = new Mapper94_98();
+
+//			System.out.println(Bytes.toStringBinary(mapper94_98.toRow(12,456,8888,6554464)));
+//			System.out.println(Bytes.toStringBinary(mapper94_98.toRow(12,452346,843488,655655656)));
+//			System.out.println(Bytes.toStringBinary(mapper94_98.toRow(12,454546545346L,8843488,455)));
+//
+//			if (true)
+//				return;
+
 			Configuration conf = org.apache.hadoop.hbase.HBaseConfiguration.create();
-			conf.set(HBASE_ZOOKEEPER_QUORUM, "zookeeper1");
+			conf.set(HBASE_ZOOKEEPER_QUORUM, "zkservices2");
 			conf.set(HBASE_ZOOKEEPER_QUORUM2, "c-sencha-s01");
-			Scan scan = new Scan(toBytesBinary("0000004a51ae17ac48e598abb3dd7300"));
-			scan.setCaching(10);
+//			Scan scan = new Scan(toBytesBinary("0000004a51ae17ac48e598abb3dd7300"));
+			Scan scan = new Scan();
+			scan.setCaching(1000);
+			scan.setFilter(new SingleColumnValueFilter(D, TYPE, CompareFilter.CompareOp.EQUAL, Bytes.toBytes("c")));
 			org.apache.hadoop.hbase.client.HTable htable = new org.apache.hadoop.hbase.client.HTable(conf, Statics.tableName);
 			ResultScanner scanner = htable.getScanner(scan);
 			int i = 0;
@@ -161,7 +175,7 @@ public class CopyTable2 extends Configured implements Tool {
 			FakeContext context = mapper94_98.createFakeContext(conf);
 			mapper94_98.setup(context);
 			for (Result result : scanner) {
-				if (++i > 3) {
+				if (++i > 10) {
 					break;
 				}
 				mapper94_98.map(new ImmutableBytesWritable(result.getRow()), result, context);
@@ -190,82 +204,38 @@ public class CopyTable2 extends Configured implements Tool {
 			}
 		}
 
-		private class Records extends TreeMap<Integer, Put> {
-			public Put getOrCreate(Integer key, byte[] idBytes) {
-				Put put = super.get(key);
-				if (put == null) {
-					System.arraycopy(idBytes, 0, rowkey, 0, 8);
-					DATE.toBytes(new Date(key.longValue() * 1000), rowkey, 9);
-					put = new Put(rowkey);
-					put.setDurability(Durability.SKIP_WAL);
-					super.put(key, put);
-				}
-				return put;
-			}
-		}
-
-		private byte[] rowkey = new byte[17];
 		private List<Put> puts = new ArrayList<Put>();
+
+//		"d:id_orig": dt.Long
+//		"d:page_id": dt.Long
+//		"d:post_id": dt.Long
+//		"d:user_id": dt.Long
+//		"d:type": dt.String
+//		"d:message": dt.String
+//		"d:created_time": dt.Long
 
 		@SuppressWarnings("unchecked")
 		@Override
 		protected void map(ImmutableBytesWritable key, Result result, Context context) throws IOException, InterruptedException {
 
 			try {
-				byte[] idBytes = result.getValue(E, ID);
-				if (idBytes == null) {
-					Get get = new Get(result.getRow());
-					get.addColumn(E, ID);
-					context.getCounter("custom", "reload missing id").increment(1);
-					idBytes = inputTable.get(get).getValue(E, ID);
-					if (idBytes == null) {
-						context.getCounter("custom", "missed id").increment(1);
-						return;
-					}
-				}
-				long id = Long.valueOf(Bytes.toString(idBytes));
-				idBytes = toBytes(rtCircShift(id, 42));
+				byte[] idOrig = result.getValue(D, ID_ORIG);
+				byte[] profileId = result.getValue(D, PAGE_ID);
+				byte[] postId = result.getValue(D, POST_ID);
+				byte[] authorId = result.getValue(D, USER_ID);
+				byte[] message = result.getValue(D, MESSAGE);
+				byte[] createdTime = result.getValue(D, CREATED_TIME);
+				long invertedCreatedTime = Long.MAX_VALUE - toLong(createdTime);
+				createdTime = toBytes(invertedCreatedTime);
 
-				Records data = new Records();
-				KeyValue[] keyValues = result.raw();
-				for (KeyValue kv : keyValues) {
-					try {
-						if (kv.getQualifierLength() < 6)
-							continue;
-						byte[] qualifier = kv.getQualifier();
-						int tms = getTms(qualifier);
-						if (tms > 1446336000) {
-							context.getCounter("custom", "skip time").increment(1);
-							continue;
-						}
-						byte[] value = kv.getValue();
-						switch ((char)qualifier[0]) {
-							case '1':
-								data.getOrCreate(tms, idBytes).add(D, COMMENT_COUNT, convertInt(value, context));
-								break;
-							case '2':
-								data.getOrCreate(tms, idBytes).add(D, SHARE_COUNT, convertInt(value, context));
-								break;
-							case '3':
-								data.getOrCreate(tms, idBytes).add(D, LIKE_COUNT, convertInt(value, context));
-								break;
-							case '4':
-								data.getOrCreate(tms, idBytes).add(D, INTERACTION_COUNT, convertInt(value, context));
-								continue;
-							case '5':
-								data.getOrCreate(tms, idBytes).add(D, ER, convertDouble(value, context));
-								break;
-							case 'i':
-								continue;
-							default:
-								continue;
-						}
-					} catch (Exception e) {
-						context.getCounter("custom", "err_kv " + e.getMessage()).increment(1);
-					}
-				}
+//				System.out.println(new Row(idOrig, profileId, postId, authorId, message, createdTime));
 
-				puts.addAll(data.values());
+				Put put = new Put(toRow(profileId, postId, createdTime, idOrig));
+				put.setDurability(Durability.SKIP_WAL);
+				put.add(D, AUTHOR_ID, toBytes("" + toLong(authorId)));
+				put.add(D, MESSAGE, message);
+				puts.add(put);
+
 				if (puts.size() >= bucketSize)
 					flush(context);
 
@@ -274,24 +244,53 @@ public class CopyTable2 extends Configured implements Tool {
 			}
 		}
 
-		private byte[] convertDouble(byte[] value, Context context) {
-			if (value.length != 4) {
-				context.getCounter("custom", "not 4B value").increment(1);
-				return new byte[0];
+		private static class Row {
+			byte[] idOrig;
+			byte[] profileId;
+			byte[] postId;
+			byte[] authorId;
+			byte[] message;
+			byte[] createdTime;
+
+			public Row(byte[] idOrig, byte[] profileId, byte[] postId, byte[] authorId, byte[] message, byte[] createdTime) {
+				this.idOrig = idOrig;
+				this.profileId = profileId;
+				this.postId = postId;
+				this.authorId = authorId;
+				this.message = message;
+				this.createdTime = createdTime;
 			}
-			return DOUBLE.toBytes((double) toFloat(value));
+
+			@Override
+			public String toString() {
+				return new ToStringBuilder(this)
+						.append("idOrig", toLong(idOrig))
+						.append("profileId", toLong(profileId))
+						.append("postId", toLong(postId))
+						.append("authorId", toLong(authorId))
+						.append("message", toStringBinary(message))
+						.append("createdTime", new Date(Long.MAX_VALUE - toLong(createdTime)))
+						.toString();
+			}
 		}
 
-		private byte[] convertInt(byte[] value, Context context) {
-			if (value.length != 4) {
-				context.getCounter("custom", "not 4B value").increment(1);
-				return new byte[0];
-			}
-			return INTEGER.toBytes(toInt(value));
+		public byte[] toRow(long profileId, long postId, long time, long idOrig) {
+			return toRow(toBytes(profileId), toBytes(postId), toBytes(time), toBytes(idOrig));
 		}
 
-		private int getTms(byte[] column) {
-			return toInt(column, column.length - 4);
+		private byte[] toRow(byte[] profileId, byte[] postId, byte[] time, byte[] idOrig) {
+			byte[] row = new byte[34];
+			ByteBuffer bb = ByteBuffer.wrap(row);
+			bb.position(2);
+			bb.put(profileId);
+			bb.put(postId);
+			bb.put(time);
+			bb.put(idOrig);
+			CRC32 crc32 = new CRC32();
+			crc32.update(row, 2, 8);
+			short crc = (short) crc32.getValue();
+			bb.putShort(0, crc);
+			return row;
 		}
 
 		private void flush(Context context) throws IOException {
@@ -304,17 +303,13 @@ public class CopyTable2 extends Configured implements Tool {
 			}
 		}
 
-		private long rtCircShift(long bits, int k) {
-			return (bits >>> k) | (bits << (Long.SIZE - k));
-		}
-
 		@Override
 		protected void setup(Context context) throws IOException, InterruptedException {
 			super.setup(context);
 			Configuration conf = context.getConfiguration();
 			org.apache98.hadoop.conf.Configuration conf98 = HBaseConfiguration.create();
 			conf98.set(HBASE_ZOOKEEPER_QUORUM, conf.get(HBASE_ZOOKEEPER_QUORUM2));
-			table = new org.apache98.hadoop.hbase.client.HTable(conf98, "tw_tweets_evolution");
+			table = new org.apache98.hadoop.hbase.client.HTable(conf98, "ig_comments");
 			inputTable = new org.apache.hadoop.hbase.client.HTable(conf, Statics.tableName);
 		}
 
